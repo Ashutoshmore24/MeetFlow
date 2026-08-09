@@ -4,6 +4,7 @@ import cookieParser from "cookie-parser";
 import ENV from "./lib/env.js";
 import connectDB from "./config/db.js";
 import authRoutes from "./routes/auth.routes.js";
+import meetingRoutes from "./routes/meeting.routes.js";
 import cors from "cors";
 
 const app = express();
@@ -18,6 +19,7 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
 app.use("/api/auth", authRoutes);
+app.use("/api/meetings", meetingRoutes);
 
 app.get("/", (req, res) => {
   res.send("Hello from the backend!");
