@@ -20,7 +20,21 @@ const userSchema = new mongoose.Schema({
     profilePic: {
         type: String,
         default: "",
-    }
+    },
+    role: {
+        type: String,
+        enum: ['user', 'admin'],
+        default: 'user',
+    },
+    isVerified: {
+        type: Boolean,
+        default: false,
+    },
+    personalRoomId: {
+        type: String,
+        unique: true,
+        required: true,
+    },
 }, { timestamps: true });
 
 const User = mongoose.model('User', userSchema);
