@@ -6,10 +6,16 @@ import connectDB from "./config/db.js";
 import authRoutes from "./routes/auth.routes.js";
 import meetingRoutes from "./routes/meeting.routes.js";
 import cors from "cors";
+import http from "http";
+import { initializeSocket } from "./socket/socket.js";
 
 const app = express();
+const server = http.createServer(app);
 
 const PORT = ENV.PORT;
+
+// Initialize Socket.IO
+initializeSocket(server);
 
 app.use(cors({ origin: "http://localhost:5173", credentials: true }));
 app.use(cookieParser());
@@ -28,7 +34,7 @@ app.get("/", (req, res) => {
 const startServer = async () => {
   try {
     await connectDB();
-    app.listen(PORT, () => {
+    server.listen(PORT, () => {
       console.log(`Server is running on port ${PORT}`);
     });
   } catch (error) {
