@@ -85,9 +85,7 @@ export const useMeetingStore = create((set) => ({
         historyMeetings: res.data.meetings || [],
       });
 
-      toast.success("Meeting history fetched successfully!");
     } catch (error) {
-      toast.error("Failed to fetch meeting history");
       console.error(error);
     } finally {
       set({ isLoadingHistory: false });

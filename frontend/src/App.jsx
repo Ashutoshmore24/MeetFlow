@@ -7,6 +7,7 @@ import DashboardPage from "./pages/DashboardPage";
 import ProtectedRoute from "./components/ProtectedRoute"; 
 import MeetingRoomPage from "./pages/MeetingRoomPage"; 
 import UpcomingPage from "./pages/UpcomingPage"; 
+import HistoryPage from "./pages/HistoryPage";
 import { Toaster } from "react-hot-toast"; 
 
 function App() { 
@@ -26,7 +27,7 @@ function App() {
 
   return ( 
     <> 
-      <Toaster position="top-right" reverseOrder={false} /> 
+      <Toaster position="top-center" reverseOrder={false} /> 
       
       <Routes> 
         {/* Public Auth Routes */}
@@ -40,12 +41,19 @@ function App() {
           </ProtectedRoute> 
         } /> 
         
-        {/* FIXED: Moved upcoming route inside the <Routes> wrapper and wrapped in ProtectedRoute */}
+        <Route path="/history" element={
+          <ProtectedRoute>
+            <HistoryPage />
+          </ProtectedRoute>
+        } />
+        
         <Route path="/upcoming" element={
           <ProtectedRoute>
             <UpcomingPage />
           </ProtectedRoute>
         } />
+
+      
 
         {/* Protected Live Meeting Route */}
         <Route path="/meeting/:meetingCode" element={ 
