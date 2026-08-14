@@ -117,15 +117,13 @@ export const useMeetingStore = create((set) => ({
     fetchUpcomingMeetings: async () => {
         set({ isFetchingMeetings: true });
         try {
-          // Replace with your actual API endpoint Axios/Fetch instance
           const res = await axiosInstance.get("/meetings/upcoming"); 
           if (res.data.success) {
-            set({ upcomingMeetings: res.data.meetings, isFetchingMeetings: false });
-            }
-           
+            set({ upcomingMeetings: res.data.meetings });
+          }
         } catch (error) {
-            
           console.error("Error fetching meetings:", error);
+        } finally {
           set({ isFetchingMeetings: false });
         }
       },

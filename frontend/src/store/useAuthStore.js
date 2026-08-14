@@ -21,7 +21,6 @@ export const useAuthStore = create((set) => ({
       set({
         authUser: null,
       });
-      toast.error("Session expired. Please log in again.");
     } finally {
       set({
         isCheckingAuth: false,
