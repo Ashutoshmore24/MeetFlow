@@ -2,12 +2,12 @@ import "dotenv/config";
 
 const ENV = {
     PORT: process.env.PORT || 5000,
-    NODE_ENV: process.env.NODE_ENV,
+    NODE_ENV: process.env.NODE_ENV || "development",
     MONGO_URI: process.env.MONGO_URI,
     JWT_SECRET: process.env.JWT_SECRET,
     ARCJET_KEY: process.env.ARCJET_KEY,
     ARCJET_ENV: process.env.ARCJET_ENV,
-
+    CLIENT_URL: process.env.CLIENT_URL || "http://localhost:5173",
 }
 
-export default ENV;
+export default ENV;

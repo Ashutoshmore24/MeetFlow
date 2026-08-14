@@ -111,11 +111,12 @@ const signup = async (req, res) => {
 
 const logout = async (_, res) => {
   try {
+    const isProduction = process.env.NODE_ENV === "production";
     res.clearCookie("jwt", {
       maxAge: 0,
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
+      secure: isProduction,
+      sameSite: isProduction ? "none" : "lax",
     });
     res.status(200).json({ message: "Logged out successfully" });
   } catch (error) {
