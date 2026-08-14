@@ -1,12 +1,13 @@
 import { Server } from "socket.io";
 import { meetingParticipants, userSocketMap } from "./roomManager.js";
+import ENV from "../lib/env.js";
 
 let io;
 
 export const initializeSocket = (server) => {
   io = new Server(server, {
     cors: {
-      origin: "http://localhost:5173",
+      origin: ENV.CLIENT_URL,
       credentials: true,
     },
   });
