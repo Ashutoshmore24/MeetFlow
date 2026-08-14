@@ -28,16 +28,17 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use("/api/auth", authRoutes);
 app.use("/api/meetings", meetingRoutes);
 
-app.get("/", (req, res) => {
-  res.send("Hello from the backend!");
-});
-
 // Serve frontend in production — Render builds the frontend into backend/dist
 if (ENV.NODE_ENV === "production") {
   const __dirname = import.meta.dirname;
   app.use(express.static(path.join(__dirname, "../dist")));
   app.get("/{*splat}", (req, res) => {
     res.sendFile(path.join(__dirname, "../dist", "index.html"));
+  });
+} else {
+  // Dev-only health check route
+  app.get("/", (req, res) => {
+    res.send("Hello from the backend!");
   });
 }
 
