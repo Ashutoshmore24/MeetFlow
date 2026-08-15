@@ -4,7 +4,6 @@ import { useAuthStore } from "../store/useAuthStore";
 
 const LoginPage = () => {
   const navigate = useNavigate();
-
   const { login, isLoggingIn } = useAuthStore();
 
   const [formData, setFormData] = useState({
@@ -14,9 +13,7 @@ const LoginPage = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-
     const result = await login(formData);
-
     if (result.success) {
       navigate("/");
     } else {
@@ -25,57 +22,67 @@ const LoginPage = () => {
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-slate-950">
-      <div className="w-full max-w-md p-8 border bg-slate-900 rounded-xl border-slate-800">
+    <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-slate-950">
+      <div className="w-full max-w-md p-8 sm:p-10 bg-slate-900 border border-slate-800 rounded-2xl shadow-xl">
+        <div className="mb-8 text-center">
+          <h1 className="text-3xl font-bold tracking-tight text-white">
+            Welcome back
+          </h1>
+          <p className="mt-2 text-sm text-slate-400">
+            Sign in to your MeetFlow account
+          </p>
+        </div>
 
-        <h1 className="mb-6 text-3xl font-bold text-center text-white">
-          Login
-        </h1>
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-slate-300">Email Address</label>
+            <input
+              type="email"
+              placeholder="name@company.com"
+              className="w-full p-3 text-white bg-slate-950 border border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-yellow-500 focus:border-yellow-500 placeholder:text-slate-600"
+              value={formData.email}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  email: e.target.value,
+                })
+              }
+              required
+            />
+          </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-
-          <input
-            type="email"
-            placeholder="Email"
-            className="w-full p-3 text-white rounded-lg bg-slate-800"
-            value={formData.email}
-            onChange={(e) =>
-              setFormData({
-                ...formData,
-                email: e.target.value,
-              })
-            }
-          />
-
-          <input
-            type="password"
-            placeholder="Password"
-            className="w-full p-3 text-white rounded-lg bg-slate-800"
-            value={formData.password}
-            onChange={(e) =>
-              setFormData({
-                ...formData,
-                password: e.target.value,
-              })
-            }
-          />
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-slate-300">Password</label>
+            <input
+              type="password"
+              placeholder="••••••••"
+              className="w-full p-3 text-white bg-slate-950 border border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-yellow-500 focus:border-yellow-500 placeholder:text-slate-600"
+              value={formData.password}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  password: e.target.value,
+                })
+              }
+              required
+            />
+          </div>
 
           <button
             disabled={isLoggingIn}
-            className="w-full p-3 font-semibold text-white transition bg-blue-600 rounded-lg hover:bg-blue-700"
+            className="w-full p-3.5 mt-2 font-semibold text-white transition-colors bg-green-600 rounded-xl hover:bg-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isLoggingIn ? "Logging In..." : "Login"}
+            {isLoggingIn ? "Signing in..." : "Sign in"}
           </button>
-
         </form>
 
-        <p className="mt-5 text-center text-slate-400">
+        <p className="mt-8 text-sm text-center text-slate-400">
           Don't have an account?{" "}
           <Link
             to="/signup"
-            className="text-blue-500"
+            className="font-medium text-blue-400 hover:text-blue-300"
           >
-            Signup
+            Sign up for free
           </Link>
         </p>
       </div>

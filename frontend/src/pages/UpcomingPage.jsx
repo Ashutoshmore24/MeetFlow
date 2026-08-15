@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMeetingStore } from "../store/useMeetingStore";
 import calendarIcon from "../assets/upcomming1.png";
+import { ArrowLeft, Copy, Video } from "lucide-react";
 
 const UpcomingPage = () => {
   const navigate = useNavigate();
@@ -32,26 +33,30 @@ const UpcomingPage = () => {
   };
 
   return (
-    <div className="min-h-screen p-10 text-white bg-slate-950">
-      <div className="max-w-4xl mx-auto">
+    <div className="min-h-screen p-10 text-white relative bg-[#0a0a0a] overflow-hidden">
+      {/* Background Gradients */}
+      <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-indigo-600/10 blur-[120px] pointer-events-none" />
+      <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-purple-600/10 blur-[120px] pointer-events-none" />
+
+      <div className="relative z-10 max-w-4xl mx-auto">
         {/* Top Header Actions */}
         <div className="flex items-center justify-between mb-8">
           <div>
             <button 
               onClick={() => navigate("/")} 
-              className="block mb-2 text-xs text-purple-400 hover:underline"
+              className="flex items-center gap-2 mb-4 text-sm font-medium transition-colors text-slate-400 hover:text-indigo-400"
             >
-              ← Back to Dashboard
+              <ArrowLeft className="w-4 h-4" /> Back to Dashboard
             </button>
-            <h1 className="text-4xl font-bold tracking-wide">Upcoming Meetings</h1>
+            <h1 className="text-4xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">Upcoming Meetings</h1>
           </div>
-          <span className="px-3 py-1 text-xs font-semibold text-purple-400 border rounded-full bg-purple-600/20 border-purple-500/30">
+          <span className="px-4 py-1.5 text-sm font-semibold text-indigo-300 border rounded-full bg-indigo-500/10 border-indigo-500/20 backdrop-blur-md">
             {upcomingMeetings?.length || 0} Scheduled
           </span>
         </div>
 
         {/* Full Meetings Container */}
-        <div className="p-6 border bg-slate-900 border-slate-800 rounded-2xl">
+        <div className="p-8 border shadow-2xl bg-white/5 backdrop-blur-xl border-white/10 rounded-2xl">
           {isFetchingMeetings ? (
             <div className="py-12 text-center text-slate-500 animate-pulse">Loading all scheduled sessions...</div>
           ) : upcomingMeetings && upcomingMeetings.length > 0 ? (
@@ -59,44 +64,44 @@ const UpcomingPage = () => {
               {upcomingMeetings.map((meeting) => (
                 <div 
                   key={meeting.id || meeting._id} 
-                  className="flex flex-col items-start justify-between gap-4 p-5 transition border sm:flex-row sm:items-center bg-slate-950 border-slate-800/80 rounded-xl hover:border-purple-500/40"
+                  className="flex flex-col items-start justify-between gap-4 p-6 transition-all border group sm:flex-row sm:items-center bg-white/5 border-white/10 rounded-xl hover:border-indigo-500/50 hover:bg-white/10"
                 >
                   <div>
-                    <h3 className="text-lg font-semibold text-slate-100">{meeting.title}</h3>
+                    <h3 className="text-xl font-bold text-slate-100">{meeting.title}</h3>
                     
                     {/* UPDATED: Aligned and integrated the custom PNG graphic */}
-                    <div className="flex items-center gap-2 mt-1">
+                    <div className="flex items-center gap-2 mt-2">
                       <img 
                         src={calendarIcon} 
                         alt="Calendar" 
-                        className="object-contain w-4 h-4" 
+                        className="object-contain w-5 h-5 opacity-80" 
                       />
-                      <p className="text-sm font-medium text-purple-400">
+                      <p className="text-sm font-medium text-indigo-300">
                         {formatMeetingTime(meeting.scheduledFor)}
                       </p>
                     </div>
                   </div>
                   
-                  <div className="flex w-full gap-2 sm:w-auto">
+                  <div className="flex w-full gap-3 sm:w-auto">
                     <button 
                       onClick={() => copyToClipboard(meeting.meetingCode)} 
-                      className="flex-1 px-4 py-2 text-xs font-medium transition rounded-lg sm:flex-initial bg-slate-800 hover:bg-slate-700 text-slate-200"
+                      className="flex items-center justify-center flex-1 gap-2 px-4 py-2.5 text-sm font-semibold transition-all rounded-lg sm:flex-initial bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 hover:text-white"
                     >
-                      Copy Code
+                      <Copy className="w-4 h-4" /> Code
                     </button>
                     <button 
                       onClick={() => navigate(`/meeting/${meeting.meetingCode}`)} 
-                      className="flex-1 px-5 py-2 text-xs font-semibold text-white transition bg-purple-600 rounded-lg shadow-lg sm:flex-initial hover:bg-purple-500 shadow-purple-600/10"
+                      className="flex items-center justify-center flex-1 gap-2 px-6 py-2.5 text-sm font-bold text-white transition-all duration-300 rounded-lg shadow-lg sm:flex-initial bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 shadow-indigo-500/25 hover:-translate-y-0.5"
                     >
-                      Start Meeting
+                      <Video className="w-4 h-4" /> Start
                     </button>
                   </div>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="py-16 text-center border border-dashed border-slate-800 rounded-xl bg-slate-950/40">
-              <p className="text-base text-slate-500">You have no upcoming sessions scheduled.</p>
+            <div className="py-16 text-center border border-dashed border-white/10 rounded-xl bg-white/5">
+              <p className="text-base text-slate-400">You have no upcoming sessions scheduled.</p>
             </div>
           )}
         </div>
