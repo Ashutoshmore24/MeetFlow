@@ -4,7 +4,7 @@ import { useAuthStore } from "../store/useAuthStore";
 import { useMeetingStore } from "../store/useMeetingStore";
 import JoinMeetingModal from "../components/dashboard/JoinMeetingModal";
 import ScheduleMeetingModal from "../components/dashboard/ScheduleMeetingModal";
-import { History } from 'lucide-react';
+import { History, Plus, Users, Calendar, Video, LogOut } from 'lucide-react';
 
 const DashboardPage = () => {
   const { authUser, logout } = useAuthStore();
@@ -36,69 +36,98 @@ const DashboardPage = () => {
       alert("Personal Room ID not found");
     }
   };
-
   return (
-    <div className="min-h-screen p-10 text-white bg-slate-950">
-      <h1 className="mb-8 text-4xl font-bold">Welcome {authUser?.fullName}</h1>
-      <div className="space-y-3">
-        <p>Email: {authUser?.email}</p>
-        <p>Personal Room: {authUser?.personalRoomId}</p>
+    <div className="min-h-screen p-10 text-white relative bg-[#0a0a0a] overflow-hidden">
+      {/* Background Gradients */}
+      <div className="absolute top-[-10%] left-[-5%] w-[40%] h-[40%] rounded-full bg-indigo-600/20 blur-[120px] pointer-events-none" />
+      <div className="absolute bottom-[-10%] right-[-5%] w-[40%] h-[40%] rounded-full bg-cyan-600/20 blur-[120px] pointer-events-none" />
+
+      <div className="relative z-10 max-w-6xl mx-auto">
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-4xl font-extrabold tracking-tight">Welcome back, <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-cyan-400">{authUser?.fullName}</span></h1>
+            <p className="mt-2 text-slate-400">Manage your meetings and schedule from your dashboard.</p>
+          </div>
+          <button onClick={logout} className="flex items-center gap-2 px-4 py-2 text-sm font-semibold transition-all border rounded-lg text-slate-300 border-white/10 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30">
+            <LogOut className="w-4 h-4" /> Logout
+          </button>
+        </div>
+
+        <div className="p-6 mb-10 border shadow-lg bg-white/5 backdrop-blur-md rounded-2xl border-white/10">
+          <p className="text-sm text-slate-400">Email: <span className="text-slate-200">{authUser?.email}</span></p>
+          <p className="text-sm text-slate-400">Personal Room ID: <span className="font-mono text-indigo-300">{authUser?.personalRoomId}</span></p>
+        </div>
 
         {/* Main Action Grid */}
-        <div className="grid grid-cols-2 gap-5 mt-10 md:grid-cols-4">
+        <div className="grid grid-cols-1 gap-5 mt-10 sm:grid-cols-2 md:grid-cols-4">
           <div
             onClick={handleNewMeeting}
-            className="p-6 transition bg-orange-500 cursor-pointer rounded-xl hover:scale-105"
+            className="flex flex-col justify-between p-6 transition-all duration-300 cursor-pointer bg-gradient-to-br from-orange-500/90 to-red-600/90 rounded-2xl hover:scale-[1.02] hover:shadow-lg hover:shadow-orange-500/25 border border-white/10 group"
           >
-            <h2 className="font-semibold">
+            <div className="p-3 mb-4 transition-transform bg-white/20 rounded-xl w-fit group-hover:scale-110">
+              <Plus className="w-6 h-6 text-white" />
+            </div>
+            <h2 className="text-xl font-bold text-white">
               {isCreatingMeeting ? "Creating..." : "New Meeting"}
             </h2>
+            <p className="mt-1 text-sm text-white/80">Start an instant meeting</p>
           </div>
 
           <div
             onClick={() => setShowJoinModal(true)}
-            className="p-6 transition bg-blue-500 cursor-pointer rounded-xl hover:scale-105"
+            className="flex flex-col justify-between p-6 transition-all duration-300 cursor-pointer bg-gradient-to-br from-blue-500/90 to-indigo-600/90 rounded-2xl hover:scale-[1.02] hover:shadow-lg hover:shadow-blue-500/25 border border-white/10 group"
           >
-            <h2 className="font-semibold">Join Meeting</h2>
-            <p className="text-sm opacity-80">Join using meeting code</p>
+            <div className="p-3 mb-4 transition-transform bg-white/20 rounded-xl w-fit group-hover:scale-110">
+              <Users className="w-6 h-6 text-white" />
+            </div>
+            <h2 className="text-xl font-bold text-white">Join Meeting</h2>
+            <p className="mt-1 text-sm text-white/80">Join using a code</p>
           </div>
 
           <div
             onClick={() => setShowScheduleModal(true)}
-            className="p-6 transition bg-purple-500 cursor-pointer rounded-xl hover:scale-105"
+            className="flex flex-col justify-between p-6 transition-all duration-300 cursor-pointer bg-gradient-to-br from-purple-500/90 to-fuchsia-600/90 rounded-2xl hover:scale-[1.02] hover:shadow-lg hover:shadow-purple-500/25 border border-white/10 group"
           >
-            <h2 className="font-semibold">Schedule Meeting</h2>
+            <div className="p-3 mb-4 transition-transform bg-white/20 rounded-xl w-fit group-hover:scale-110">
+              <Calendar className="w-6 h-6 text-white" />
+            </div>
+            <h2 className="text-xl font-bold text-white">Schedule</h2>
+            <p className="mt-1 text-sm text-white/80">Plan your meeting</p>
           </div>
 
           <div
             onClick={handlePersonalRoomClick}
-            className="p-6 transition bg-yellow-500 cursor-pointer rounded-xl hover:scale-105 text-slate-950"
+            className="flex flex-col justify-between p-6 transition-all duration-300 cursor-pointer bg-gradient-to-br from-teal-500/90 to-emerald-600/90 rounded-2xl hover:scale-[1.02] hover:shadow-lg hover:shadow-teal-500/25 border border-white/10 group"
           >
-            <h2 className="font-bold">Personal Room</h2>
+            <div className="p-3 mb-4 transition-transform bg-white/20 rounded-xl w-fit group-hover:scale-110">
+              <Video className="w-6 h-6 text-white" />
+            </div>
+            <h2 className="text-xl font-bold text-white">Personal Room</h2>
+            <p className="mt-1 text-sm text-white/80">Use your permanent link</p>
           </div>
         </div>
 
         {/* Navigation Row Container */}
-        <div className="grid max-w-4xl grid-cols-1 gap-4 mt-8 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-5 mt-8 md:grid-cols-2">
           {/* Upcoming Meetings Link */}
           <div
             onClick={() => navigate("/upcoming")}
-            className="flex items-center justify-between p-5 transition-all border cursor-pointer bg-slate-900 hover:bg-slate-900/80 border-slate-800 rounded-xl hover:border-slate-700"
+            className="flex items-center justify-between p-6 transition-all border cursor-pointer backdrop-blur-md bg-white/5 hover:bg-white/10 border-white/10 rounded-2xl hover:border-indigo-500/50 group"
           >
-            <div className="flex items-center gap-4">
-              <div className="p-3 text-xl text-purple-400 bg-purple-600/20 rounded-xl">
-                📅
+            <div className="flex items-center gap-5">
+              <div className="p-4 transition-colors rounded-xl bg-indigo-500/20 text-indigo-400 group-hover:bg-indigo-500/30">
+                <Calendar className="w-7 h-7" />
               </div>
               <div>
-                <h3 className="font-bold text-slate-200">Upcoming Meetings</h3>
-                <p className="text-xs text-slate-400 mt-0.5">
+                <h3 className="text-lg font-bold text-white">Upcoming Meetings</h3>
+                <p className="mt-1 text-sm text-slate-400">
                   {upcomingMeetings?.length > 0
                     ? `You have ${upcomingMeetings.length} sessions scheduled`
                     : "No upcoming sessions listed"}
                 </p>
               </div>
             </div>
-            <span className="text-sm font-semibold text-slate-500">
+            <span className="text-sm font-semibold transition-transform text-indigo-400 group-hover:translate-x-1">
               View All →
             </span>
           </div>
@@ -106,30 +135,27 @@ const DashboardPage = () => {
           {/* History Meetings Link */}
           <div
             onClick={() => navigate("/history")}
-            className="flex items-center justify-between p-5 transition-all border cursor-pointer bg-slate-900 hover:bg-slate-900/80 border-slate-800 rounded-xl hover:border-slate-700"
+            className="flex items-center justify-between p-6 transition-all border cursor-pointer backdrop-blur-md bg-white/5 hover:bg-white/10 border-white/10 rounded-2xl hover:border-emerald-500/50 group"
           >
-            <div className="flex items-center gap-4">
-              <div className="p-3 text-emerald-400 bg-emerald-600/20 rounded-xl">
-                <History className="w-6 h-6" />
+            <div className="flex items-center gap-5">
+              <div className="p-4 transition-colors rounded-xl bg-emerald-500/20 text-emerald-400 group-hover:bg-emerald-500/30">
+                <History className="w-7 h-7" />
               </div>
               <div>
-                <h3 className="font-bold text-slate-200">Meeting History</h3>
-                <p className="text-xs text-slate-400 mt-0.5">
-        {historyMeetings?.length > 0 
-          ? `You have ${historyMeetings.length} past sessions recorded` 
-          : "No historic sessions listed"}
-      </p>
+                <h3 className="text-lg font-bold text-white">Meeting History</h3>
+                <p className="mt-1 text-sm text-slate-400">
+                  {historyMeetings?.length > 0 
+                    ? `You have ${historyMeetings.length} past sessions recorded` 
+                    : "No historic sessions listed"}
+                </p>
               </div>
             </div>
-            <span className="text-sm font-semibold text-slate-500">
+            <span className="text-sm font-semibold transition-transform text-emerald-400 group-hover:translate-x-1">
               Review →
             </span>
           </div>
         </div>
 
-        <button onClick={logout} className="px-5 py-2 mt-6 bg-red-600 rounded-lg">
-          Logout
-        </button>
       </div>
 
       <JoinMeetingModal isOpen={showJoinModal} onClose={() => setShowJoinModal(false)} />

@@ -113,15 +113,18 @@ const ScheduleMeetingModal = ({ isOpen, onClose }) => {
 
   return (
     <div 
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md"
       onClick={onClose}
     >
       <form 
         onSubmit={handleSchedule}
         onClick={(e) => e.stopPropagation()} 
-        className="w-full max-w-md p-6 text-white border shadow-2xl bg-slate-900 border-slate-800 rounded-2xl"
+        className="w-full max-w-md p-8 text-white duration-200 border shadow-2xl backdrop-blur-xl bg-[#0a0a0a]/90 border-white/10 rounded-2xl animate-in fade-in zoom-in-95"
       >
-        <h2 className="mb-6 text-xl font-bold tracking-wide text-slate-100">Schedule Meeting</h2>
+        <div className="mb-8">
+          <h2 className="text-2xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-fuchsia-400">Schedule Meeting</h2>
+          <p className="mt-1 text-sm text-slate-400">Plan your future session.</p>
+        </div>
         
         <div className="space-y-5">
           {/* Title Input */}
@@ -135,7 +138,7 @@ const ScheduleMeetingModal = ({ isOpen, onClose }) => {
               value={title} 
               onChange={(e) => setTitle(e.target.value)} 
               disabled={isSchedulingMeeting}
-              className="w-full p-3 transition border rounded-xl bg-slate-800/50 border-slate-700/60 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 text-slate-200 placeholder:text-slate-500"
+              className="w-full p-3.5 transition-all border rounded-xl bg-white/5 border-white/10 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50 text-slate-200 placeholder:text-slate-500"
               required
               autoFocus
             />
@@ -151,7 +154,7 @@ const ScheduleMeetingModal = ({ isOpen, onClose }) => {
               <button
                 type="button"
                 onClick={() => setShowCalendar(!showCalendar)}
-                className="flex items-center justify-between w-full p-3 text-left transition border rounded-xl bg-slate-800/50 border-slate-700/60 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 text-slate-200"
+                className="flex items-center justify-between w-full p-3.5 text-left transition-all border rounded-xl bg-white/5 border-white/10 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50 text-slate-200"
               >
                 <span className={selectedDate ? "text-slate-200" : "text-slate-500"}>
                   {selectedDate ? selectedDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "Select Date"}
@@ -161,14 +164,14 @@ const ScheduleMeetingModal = ({ isOpen, onClose }) => {
 
               {/* Custom Dropdown Calendar Engine UI Panel */}
               {showCalendar && (
-                <div className="absolute left-0 z-50 p-4 mt-2 duration-150 border shadow-2xl top-full w-72 bg-slate-800 border-slate-700 rounded-xl animate-in fade-in zoom-in-95">
+                <div className="absolute left-0 z-50 p-4 mt-2 duration-150 border shadow-2xl top-full w-72 bg-[#121212] backdrop-blur-xl border-white/10 rounded-xl animate-in fade-in zoom-in-95">
                   {/* Calendar Top Header Actions */}
                   <div className="flex items-center justify-between mb-3">
-                    <button type="button" onClick={handlePrevMonth} className="p-1 rounded hover:bg-slate-700 text-slate-400">◀</button>
+                    <button type="button" onClick={handlePrevMonth} className="p-1 transition-colors rounded-lg hover:bg-white/10 text-slate-400">◀</button>
                     <span className="text-sm font-semibold text-slate-200">
                       {months[currentMonth.getMonth()]} {currentMonth.getFullYear()}
                     </span>
-                    <button type="button" onClick={handleNextMonth} className="p-1 rounded hover:bg-slate-700 text-slate-400">▶</button>
+                    <button type="button" onClick={handleNextMonth} className="p-1 transition-colors rounded-lg hover:bg-white/10 text-slate-400">▶</button>
                   </div>
 
                   {/* Day Names Grid Label */}
@@ -196,7 +199,7 @@ const ScheduleMeetingModal = ({ isOpen, onClose }) => {
                 value={time} 
                 onChange={(e) => setTime(e.target.value)} 
                 disabled={isSchedulingMeeting}
-                className="w-full p-3 rounded-xl bg-slate-800/50 border border-slate-700/60 text-slate-200 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition [color-scheme:dark] [&::-webkit-calendar-picker-indicator]:p-1 [&::-webkit-calendar-picker-indicator]:cursor-pointer"
+                className="w-full p-3.5 transition-all border rounded-xl bg-white/5 border-white/10 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50 text-slate-200 placeholder:text-slate-500 [color-scheme:dark] [&::-webkit-calendar-picker-indicator]:p-1 [&::-webkit-calendar-picker-indicator]:cursor-pointer"
                 required
               />
             </div>
@@ -208,7 +211,7 @@ const ScheduleMeetingModal = ({ isOpen, onClose }) => {
           <button 
             type="button"
             onClick={onClose} 
-            className="flex-1 py-3 font-medium transition rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300"
+            className="flex-1 py-3 font-semibold transition-all rounded-xl bg-white/5 hover:bg-white/10 text-slate-300"
           >
             Cancel
           </button>
@@ -216,7 +219,7 @@ const ScheduleMeetingModal = ({ isOpen, onClose }) => {
           <button 
             type="submit" 
             disabled={isSchedulingMeeting || !title.trim() || !selectedDate || !time}
-            className="flex-1 py-3 font-medium text-white transition bg-purple-600 shadow-lg rounded-xl hover:bg-purple-500 shadow-purple-600/20 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="flex-1 py-3 font-semibold text-white transition-all duration-300 rounded-xl bg-gradient-to-r from-purple-600 to-fuchsia-600 hover:from-purple-500 hover:to-fuchsia-500 hover:shadow-lg hover:shadow-purple-500/25 disabled:opacity-50 disabled:cursor-not-allowed hover:-translate-y-0.5"
           >
             {isSchedulingMeeting ? "Scheduling..." : "Schedule"}
           </button>
