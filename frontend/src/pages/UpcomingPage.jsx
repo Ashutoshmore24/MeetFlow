@@ -1,12 +1,17 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMeetingStore } from "../store/useMeetingStore";
+import ShareMeetingModal from "../components/dashboard/ShareMeetingModal";
 import calendarIcon from "../assets/upcomming1.png";
-import { ArrowLeft, Copy, Video } from "lucide-react";
+import { ArrowLeft, Copy, Video, Share2 } from "lucide-react";
 
 const UpcomingPage = () => {
   const navigate = useNavigate();
   const { upcomingMeetings, fetchUpcomingMeetings, isFetchingMeetings } = useMeetingStore();
+
+  // Share modal state
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [selectedMeeting, setSelectedMeeting] = useState(null);
 
   useEffect(() => {
     if (fetchUpcomingMeetings) fetchUpcomingMeetings();
@@ -89,6 +94,12 @@ const UpcomingPage = () => {
                     >
                       <Copy className="w-4 h-4" /> Code
                     </button>
+                    <button
+                      onClick={() => { setSelectedMeeting(meeting); setShowShareModal(true); }}
+                      className="flex items-center justify-center flex-1 gap-2 px-4 py-2.5 text-sm font-semibold transition-all rounded-lg sm:flex-initial bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 hover:text-white"
+                    >
+                      <Share2 className="w-4 h-4" /> Share
+                    </button>
                     <button 
                       onClick={() => navigate(`/meeting/${meeting.meetingCode}`)} 
                       className="flex items-center justify-center flex-1 gap-2 px-6 py-2.5 text-sm font-bold text-white transition-all duration-300 rounded-lg shadow-lg sm:flex-initial bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 shadow-indigo-500/25 hover:-translate-y-0.5"
@@ -106,6 +117,14 @@ const UpcomingPage = () => {
           )}
         </div>
       </div>
+
+      <ShareMeetingModal
+        isOpen={showShareModal}
+        onClose={() => { setShowShareModal(false); setSelectedMeeting(null); }}
+        meetingCode={selectedMeeting?.meetingCode}
+        title={selectedMeeting?.title}
+        scheduledFor={selectedMeeting?.scheduledFor}
+      />
     </div>
   );
 };

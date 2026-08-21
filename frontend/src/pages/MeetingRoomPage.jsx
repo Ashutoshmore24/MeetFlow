@@ -3,6 +3,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { socket } from "../lib/socket";
 import { useAuthStore } from "../store/useAuthStore";
 import { useMeetingStore } from "../store/useMeetingStore";
+import ShareMeetingModal from "../components/dashboard/ShareMeetingModal";
 import toast from "react-hot-toast";
 
 const MeetingRoomPage = () => {
@@ -614,6 +615,7 @@ const MeetingRoomPage = () => {
   // ─── Mobile sidebar tab state ────────────────────────────────────
   const [sidebarTab, setSidebarTab] = useState("chat"); // "participants" | "chat"
   const [showSidebar, setShowSidebar] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
 
   // Total video tiles (self + remote)
   const totalTiles = 1 + otherParticipants.length;
@@ -634,12 +636,13 @@ const MeetingRoomPage = () => {
       <header className="flex items-center justify-between px-3 py-2 sm:px-4 sm:py-3 border-b border-slate-800 bg-slate-900/40 flex-shrink-0">
         <h1 className="text-base sm:text-xl font-bold text-indigo-400">MeetFlow</h1>
         <div className="flex items-center gap-2">
-          <p className="text-[11px] sm:text-sm bg-slate-800 px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg border border-slate-700">
-            <span className="hidden sm:inline">Meeting: </span>
-            <span className="font-mono font-bold text-amber-400">
-              {meetingCode}
-            </span>
-          </p>
+          <button
+            onClick={() => setShowShareModal(true)}
+            className="flex items-center gap-1.5 text-[11px] sm:text-sm bg-indigo-600/20 hover:bg-indigo-600/30 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-lg border border-indigo-500/40 hover:border-indigo-500/60 text-indigo-300 hover:text-indigo-200 font-semibold transition-all cursor-pointer"
+          >
+            <span>🔗</span>
+            <span className="hidden sm:inline">Share</span>
+          </button>
           {/* Mobile sidebar toggle */}
           <button
             onClick={() => setShowSidebar(!showSidebar)}
@@ -717,21 +720,19 @@ const MeetingRoomPage = () => {
           <div className="flex md:hidden border-b border-slate-800 flex-shrink-0">
             <button
               onClick={() => setSidebarTab("participants")}
-              className={`flex-1 py-2.5 text-xs font-semibold transition-colors ${
-                sidebarTab === "participants"
-                  ? "text-indigo-400 border-b-2 border-indigo-400 bg-slate-900/40"
-                  : "text-slate-500 hover:text-slate-300"
-              }`}
+              className={`flex-1 py-2.5 text-xs font-semibold transition-colors ${sidebarTab === "participants"
+                ? "text-indigo-400 border-b-2 border-indigo-400 bg-slate-900/40"
+                : "text-slate-500 hover:text-slate-300"
+                }`}
             >
               Participants ({participants.length})
             </button>
             <button
               onClick={() => setSidebarTab("chat")}
-              className={`flex-1 py-2.5 text-xs font-semibold transition-colors ${
-                sidebarTab === "chat"
-                  ? "text-indigo-400 border-b-2 border-indigo-400 bg-slate-900/40"
-                  : "text-slate-500 hover:text-slate-300"
-              }`}
+              className={`flex-1 py-2.5 text-xs font-semibold transition-colors ${sidebarTab === "chat"
+                ? "text-indigo-400 border-b-2 border-indigo-400 bg-slate-900/40"
+                : "text-slate-500 hover:text-slate-300"
+                }`}
             >
               Chat {messages.length > 0 && `(${messages.length})`}
             </button>
@@ -847,18 +848,17 @@ const MeetingRoomPage = () => {
                         <span className="text-[9px] text-slate-600">
                           {msg.timestamp
                             ? new Date(msg.timestamp).toLocaleTimeString([], {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })
                             : ""}
                         </span>
                       </div>
                       <div
-                        className={`max-w-[85%] rounded-2xl px-3 py-1.5 text-xs break-words shadow-sm ${
-                          isMe
-                            ? "bg-indigo-600 text-white rounded-tr-none"
-                            : "bg-slate-800 text-slate-200 rounded-tl-none border border-slate-700/60"
-                        }`}
+                        className={`max-w-[85%] rounded-2xl px-3 py-1.5 text-xs break-words shadow-sm ${isMe
+                          ? "bg-indigo-600 text-white rounded-tr-none"
+                          : "bg-slate-800 text-slate-200 rounded-tl-none border border-slate-700/60"
+                          }`}
                       >
                         {msg.message}
                       </div>
@@ -897,33 +897,30 @@ const MeetingRoomPage = () => {
       <footer className="flex justify-center items-center gap-2 sm:gap-4 px-2 py-2 sm:px-4 sm:py-3 border-t border-slate-800 bg-slate-900/60 flex-shrink-0">
         <button
           onClick={toggleMute}
-          className={`px-2.5 sm:px-4 py-1.5 sm:py-2 border rounded-lg transition-colors text-[11px] sm:text-xs font-semibold ${
-            isMuted
-              ? "bg-red-600/20 border-red-500 text-red-400"
-              : "bg-slate-800 border-slate-700 text-slate-200"
-          }`}
+          className={`px-2.5 sm:px-4 py-1.5 sm:py-2 border rounded-lg transition-colors text-[11px] sm:text-xs font-semibold ${isMuted
+            ? "bg-red-600/20 border-red-500 text-red-400"
+            : "bg-slate-800 border-slate-700 text-slate-200"
+            }`}
         >
           <span className="sm:hidden">{isMuted ? "🎙️" : "🎤"}</span>
           <span className="hidden sm:inline">{isMuted ? "Unmute Mic" : "Mute Mic"}</span>
         </button>
         <button
           onClick={toggleCamera}
-          className={`px-2.5 sm:px-4 py-1.5 sm:py-2 border rounded-lg transition-colors text-[11px] sm:text-xs font-semibold ${
-            isCamOff
-              ? "bg-red-600/20 border-red-500 text-red-400"
-              : "bg-slate-800 border-slate-700 text-slate-200"
-          }`}
+          className={`px-2.5 sm:px-4 py-1.5 sm:py-2 border rounded-lg transition-colors text-[11px] sm:text-xs font-semibold ${isCamOff
+            ? "bg-red-600/20 border-red-500 text-red-400"
+            : "bg-slate-800 border-slate-700 text-slate-200"
+            }`}
         >
           <span className="sm:hidden">{isCamOff ? "📷" : "📹"}</span>
           <span className="hidden sm:inline">{isCamOff ? "Turn Cam On" : "Turn Cam Off"}</span>
         </button>
         <button
           onClick={toggleScreenShare}
-          className={`px-2.5 sm:px-4 py-1.5 sm:py-2 border rounded-lg transition-colors text-[11px] sm:text-xs font-semibold ${
-            isScreenSharing
-              ? "bg-emerald-600/20 border-emerald-500 text-emerald-400"
-              : "bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700"
-          }`}
+          className={`px-2.5 sm:px-4 py-1.5 sm:py-2 border rounded-lg transition-colors text-[11px] sm:text-xs font-semibold ${isScreenSharing
+            ? "bg-emerald-600/20 border-emerald-500 text-emerald-400"
+            : "bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700"
+            }`}
         >
           <span className="sm:hidden">🖥️</span>
           <span className="hidden sm:inline">{isScreenSharing ? "Stop Share" : "Share Screen"}</span>
@@ -935,6 +932,14 @@ const MeetingRoomPage = () => {
           Leave
         </button>
       </footer>
+
+      <ShareMeetingModal
+        isOpen={showShareModal}
+        onClose={() => setShowShareModal(false)}
+        meetingCode={meetingCode}
+        title={currentMeetingDoc?.title}
+        scheduledFor={currentMeetingDoc?.scheduledFor}
+      />
     </div>
   );
 };
