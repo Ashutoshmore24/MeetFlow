@@ -17,8 +17,6 @@ const SignupPage = () => {
     const result = await signup(formData);
     if (result.success) {
       navigate("/");
-    } else {
-      alert(result.message);
     }
   };
 

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useMeetingStore } from "../../store/useMeetingStore";
+import ShareMeetingModal from "./ShareMeetingModal";
 
 const ScheduleMeetingModal = ({ isOpen, onClose }) => {
   const { scheduleMeeting, isSchedulingMeeting } = useMeetingStore();
@@ -13,6 +14,10 @@ const ScheduleMeetingModal = ({ isOpen, onClose }) => {
   const [showCalendar, setShowCalendar] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const calendarRef = useRef(null);
+
+  // Share Modal State
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [scheduledMeeting, setScheduledMeeting] = useState(null);
 
   // Close calendar dropdown when clicking outside
   useEffect(() => {
@@ -44,13 +49,20 @@ const ScheduleMeetingModal = ({ isOpen, onClose }) => {
     });
 
     if (result.success) {
+      setScheduledMeeting(result.meeting);
+      setShowShareModal(true);
       setTitle("");
       setSelectedDate(null);
       setTime("");
-      onClose();
     } else {
       alert(result.message);
     }
+  };
+
+  const handleShareClose = () => {
+    setShowShareModal(false);
+    setScheduledMeeting(null);
+    onClose();
   };
 
   // Calendar Calculation Engine Helpers
@@ -225,8 +237,15 @@ const ScheduleMeetingModal = ({ isOpen, onClose }) => {
           </button>
         </div>
       </form>
+
+      <ShareMeetingModal
+        isOpen={showShareModal}
+        onClose={handleShareClose}
+        meetingCode={scheduledMeeting?.meetingCode}
+        title={scheduledMeeting?.title}
+        scheduledFor={scheduledMeeting?.scheduledFor}
+      />
     </div>
   );
 };
-
 export default ScheduleMeetingModal;

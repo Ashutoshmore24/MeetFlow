@@ -4,6 +4,7 @@ import { useAuthStore } from "../store/useAuthStore";
 import { useMeetingStore } from "../store/useMeetingStore";
 import JoinMeetingModal from "../components/dashboard/JoinMeetingModal";
 import ScheduleMeetingModal from "../components/dashboard/ScheduleMeetingModal";
+import ShareMeetingModal from "../components/dashboard/ShareMeetingModal";
 import { History, Plus, Users, Calendar, Video, LogOut } from 'lucide-react';
 
 const DashboardPage = () => {
@@ -12,6 +13,8 @@ const DashboardPage = () => {
   const { createInstantMeeting, isCreatingMeeting, upcomingMeetings, fetchUpcomingMeetings,historyMeetings,getHistoryMeetings } = useMeetingStore();
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [createdMeeting, setCreatedMeeting] = useState(null);
 
   useEffect(() => {
     if (fetchUpcomingMeetings) {
@@ -23,9 +26,17 @@ const DashboardPage = () => {
   const handleNewMeeting = async () => {
     const result = await createInstantMeeting();
     if (result.success) {
-      navigate(`/meeting/${result.meeting.meetingCode}`);
+      setCreatedMeeting(result.meeting);
+      setShowShareModal(true);
     } else {
       alert(result.message);
+    }
+  };
+
+  const handleJoinCreatedMeeting = () => {
+    if (createdMeeting?.meetingCode) {
+      setShowShareModal(false);
+      navigate(`/meeting/${createdMeeting.meetingCode}`);
     }
   };
 
@@ -48,15 +59,23 @@ const DashboardPage = () => {
             <h1 className="text-4xl font-extrabold tracking-tight">Welcome back, <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-cyan-400">{authUser?.fullName}</span></h1>
             <p className="mt-2 text-slate-400">Manage your meetings and schedule from your dashboard.</p>
           </div>
-          <button onClick={logout} className="flex items-center gap-2 px-4 py-2 text-sm font-semibold transition-all border rounded-lg text-slate-300 border-white/10 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30">
-            <LogOut className="w-4 h-4" /> Logout
-          </button>
+          <div className="flex items-center gap-4">
+            <button 
+              onClick={() => navigate("/profile")}
+              className="w-10 h-10 rounded-full border border-indigo-500/40 p-0.5 overflow-hidden hover:scale-105 transition-transform shadow-lg shadow-indigo-500/20"
+            >
+              <img 
+                src={authUser?.profilePic || "https://ui-avatars.com/api/?name=" + encodeURIComponent(authUser?.fullName || "User") + "&background=random"} 
+                alt="Profile" 
+                className="w-full h-full object-cover rounded-full bg-slate-800"
+              />
+            </button>
+            <button onClick={logout} className="flex items-center gap-2 px-4 py-2 text-sm font-semibold transition-all border rounded-lg text-slate-300 border-white/10 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30">
+              <LogOut className="w-4 h-4" /> Logout
+            </button>
+          </div>
         </div>
 
-        <div className="p-6 mb-10 border shadow-lg bg-white/5 backdrop-blur-md rounded-2xl border-white/10">
-          <p className="text-sm text-slate-400">Email: <span className="text-slate-200">{authUser?.email}</span></p>
-          <p className="text-sm text-slate-400">Personal Room ID: <span className="font-mono text-indigo-300">{authUser?.personalRoomId}</span></p>
-        </div>
 
         {/* Main Action Grid */}
         <div className="grid grid-cols-1 gap-5 mt-10 sm:grid-cols-2 md:grid-cols-4">
@@ -160,6 +179,14 @@ const DashboardPage = () => {
 
       <JoinMeetingModal isOpen={showJoinModal} onClose={() => setShowJoinModal(false)} />
       <ScheduleMeetingModal isOpen={showScheduleModal} onClose={() => setShowScheduleModal(false)} />
+      <ShareMeetingModal
+        isOpen={showShareModal}
+        onClose={() => { setShowShareModal(false); setCreatedMeeting(null); }}
+        meetingCode={createdMeeting?.meetingCode}
+        title={createdMeeting?.title}
+        showJoinButton={true}
+        onJoinClick={handleJoinCreatedMeeting}
+      />
     </div>
   );
 };

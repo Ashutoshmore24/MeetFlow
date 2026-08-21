@@ -8,6 +8,7 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import MeetingRoomPage from "./pages/MeetingRoomPage"; 
 import UpcomingPage from "./pages/UpcomingPage"; 
 import HistoryPage from "./pages/HistoryPage";
+import ProfilePage from "./pages/ProfilePage";
 import { Toaster } from "react-hot-toast"; 
 
 function App() { 
@@ -50,6 +51,12 @@ function App() {
         <Route path="/upcoming" element={
           <ProtectedRoute>
             <UpcomingPage />
+          </ProtectedRoute>
+        } />
+
+        <Route path="/profile" element={
+          <ProtectedRoute>
+            <ProfilePage />
           </ProtectedRoute>
         } />
 
