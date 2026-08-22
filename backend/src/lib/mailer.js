@@ -4,8 +4,8 @@ import ENV from "./env.js";
 // Gmail SMTP transporter
 const transporter = nodemailer.createTransport({
   host: "smtp.gmail.com",
-  port: 465,
-  secure: true, // true for 465, false for other ports
+  port: 587,
+  secure: false,
   auth: {
     user: ENV.EMAIL_USER,
     pass: ENV.EMAIL_PASS,
