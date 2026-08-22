@@ -5,16 +5,26 @@ import { useMeetingStore } from "../store/useMeetingStore";
 import JoinMeetingModal from "../components/dashboard/JoinMeetingModal";
 import ScheduleMeetingModal from "../components/dashboard/ScheduleMeetingModal";
 import ShareMeetingModal from "../components/dashboard/ShareMeetingModal";
-import { History, Plus, Users, Calendar, Video, LogOut } from 'lucide-react';
+import { History, Plus, Users, Calendar, Video, LogOut, Mail, X } from 'lucide-react';
 
 const DashboardPage = () => {
-  const { authUser, logout } = useAuthStore();
+  const { authUser, logout, resendVerification } = useAuthStore();
   const navigate = useNavigate();
   const { createInstantMeeting, isCreatingMeeting, upcomingMeetings, fetchUpcomingMeetings,historyMeetings,getHistoryMeetings } = useMeetingStore();
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [createdMeeting, setCreatedMeeting] = useState(null);
+ 
+  const [bannerDismissed, setBannerDismissed] = useState(() => {
+    // Re-show banner after 24h even if previously dismissed
+    const dismissed = localStorage.getItem("mf_verify_banner_dismissed");
+    if (!dismissed) return false;
+    const dismissedAt = parseInt(dismissed, 10);
+    const twentyFourHours = 24 * 60 * 60 * 1000;
+    return Date.now() - dismissedAt < twentyFourHours;
+  });
+  const [isResending, setIsResending] = useState(false);
 
   useEffect(() => {
     if (fetchUpcomingMeetings) {
@@ -47,8 +57,51 @@ const DashboardPage = () => {
       alert("Personal Room ID not found");
     }
   };
+
+  const handleResendVerification = async () => {
+    setIsResending(true);
+    await resendVerification();
+    setIsResending(false);
+  };
+
+  const handleDismissBanner = () => {
+    localStorage.setItem("mf_verify_banner_dismissed", Date.now().toString());
+    setBannerDismissed(true);
+  };
+
+  const showVerifyBanner = authUser && authUser.isVerified === false && !bannerDismissed;
   return (
-    <div className="min-h-screen p-10 text-white relative bg-[#0a0a0a] overflow-hidden">
+    <div className="min-h-screen text-white relative bg-[#0a0a0a] overflow-hidden">
+      {/* Unverified Email Banner */}
+      {showVerifyBanner && (
+        <div className="relative z-50 flex items-center justify-between gap-3 px-4 py-3 bg-amber-500/10 border-b border-amber-500/30 backdrop-blur-sm">
+          <div className="flex items-center gap-3 min-w-0">
+            <Mail className="w-4 h-4 text-amber-400 flex-shrink-0" />
+            <p className="text-sm text-amber-200 truncate">
+              <span className="font-semibold">Verify your email</span>
+              <span className="hidden sm:inline text-amber-300/80"> — check your inbox for the verification link we sent to </span>
+              <span className="hidden sm:inline font-mono text-amber-300">{authUser.email}</span>
+            </p>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              onClick={handleResendVerification}
+              disabled={isResending}
+              className="text-xs font-semibold text-amber-300 hover:text-white border border-amber-500/40 hover:border-amber-400 px-3 py-1 rounded-lg transition-all disabled:opacity-50"
+            >
+              {isResending ? "Sending…" : "Resend"}
+            </button>
+            <button
+              onClick={handleDismissBanner}
+              className="p-1 text-amber-400/60 hover:text-amber-300 transition-colors rounded"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="p-10">
       {/* Background Gradients */}
       <div className="absolute top-[-10%] left-[-5%] w-[40%] h-[40%] rounded-full bg-indigo-600/20 blur-[120px] pointer-events-none" />
       <div className="absolute bottom-[-10%] right-[-5%] w-[40%] h-[40%] rounded-full bg-cyan-600/20 blur-[120px] pointer-events-none" />
@@ -174,8 +227,8 @@ const DashboardPage = () => {
             </span>
           </div>
         </div>
-
-      </div>
+      </div>{/* end relative z-10 max-w-6xl */}
+      </div>{/* end p-10 wrapper */}
 
       <JoinMeetingModal isOpen={showJoinModal} onClose={() => setShowJoinModal(false)} />
       <ScheduleMeetingModal isOpen={showScheduleModal} onClose={() => setShowScheduleModal(false)} />

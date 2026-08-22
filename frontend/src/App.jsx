@@ -9,7 +9,8 @@ import MeetingRoomPage from "./pages/MeetingRoomPage";
 import UpcomingPage from "./pages/UpcomingPage"; 
 import HistoryPage from "./pages/HistoryPage";
 import ProfilePage from "./pages/ProfilePage";
-import { Toaster } from "react-hot-toast"; 
+import VerifyEmailPage from "./pages/VerifyEmailPage";
+import { Toaster } from "react-hot-toast";
 
 function App() { 
   const { checkAuth, isCheckingAuth, authUser } = useAuthStore(); 
@@ -34,6 +35,7 @@ function App() {
         {/* Public Auth Routes */}
         <Route path="/login" element={!authUser ? <LoginPage /> : <Navigate to="/" />} /> 
         <Route path="/signup" element={!authUser ? <SignupPage /> : <Navigate to="/" />} /> 
+        <Route path="/verify-email/:token" element={<VerifyEmailPage />} />
         
         {/* Protected Dashboard Route */}
         <Route path="/" element={ 

@@ -134,4 +134,22 @@ export const useAuthStore = create((set) => ({
       set({ isUpdatingProfile: false });
     }
   },
+
+  resendVerification: async () => {
+    try {
+      const res = await axiosInstance.post("/auth/resend-verification");
+      toast.success(res.data.message || "Verification email sent!");
+      return { success: true };
+    } catch (error) {
+      toast.error(error.response?.data?.message || "Failed to resend email.");
+      return { success: false };
+    }
+  },
+
+  // Called after user verifies — updates local state so banner disappears instantly
+  setAuthUserVerified: () => {
+    set((state) => ({
+      authUser: state.authUser ? { ...state.authUser, isVerified: true } : null,
+    }));
+  },
 }));

@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMeetingStore } from '../store/useMeetingStore';
-import { ArrowLeft, History } from 'lucide-react';
+import { ArrowLeft, History, Clock } from 'lucide-react';
 
 const HistoryPage = () => {
   const navigate = useNavigate();
@@ -38,6 +38,24 @@ const HistoryPage = () => {
       return <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-red-800 text-slate-400 border border-slate-700">Ended</span>;
     }
     return <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30">{status}</span>;
+  };
+
+  // Compute a human-readable duration string from startedAt → endedAt
+  const formatDuration = (startedAt, endedAt) => {
+    if (!startedAt || !endedAt) return null;
+    const diffMs = new Date(endedAt) - new Date(startedAt);
+    if (diffMs <= 0) return null;
+    const totalSeconds = Math.floor(diffMs / 1000);
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60);
+    const s = totalSeconds % 60;
+    if (h > 0) {
+      return `${h}h ${m}m`;
+    }
+    if (m > 0) {
+      return `${m}m ${s}s`;
+    }
+    return `${s}s`;
   };
 
   // Uses your store's isLoadingHistory flag
@@ -136,6 +154,16 @@ const HistoryPage = () => {
                             <time dateTime={meeting.scheduledFor}>{formatDate(meeting.scheduledFor)}</time>
                             <span className="text-white/20">•</span>
                             <span className="truncate">Hosted by <span className="font-medium text-slate-300">{meeting.host?.fullName || 'Unknown'}</span></span>
+                            {/* Duration badge */}
+                            {formatDuration(meeting.startedAt, meeting.endedAt) && (
+                              <>
+                                <span className="text-white/20">•</span>
+                                <span className="inline-flex items-center gap-1 text-emerald-400 font-medium">
+                                  <Clock className="w-3 h-3" />
+                                  {formatDuration(meeting.startedAt, meeting.endedAt)}
+                                </span>
+                              </>
+                            )}
                           </div>
                         </div>
                         <div className="flex items-center flex-shrink-0">
