@@ -3,6 +3,10 @@ import bcrypt from "bcryptjs";
 import { generateToken } from "../lib/utils.js";
 import crypto from "crypto";
 import cloudinary from "../config/cloudinary.js";
+import { sendVerificationEmail } from "../lib/mailer.js";
+
+// ─── Helper: hash a raw token for safe DB storage ─────────────────────────
+const hashToken = (token) => crypto.createHash("sha256").update(token).digest("hex");
 
 const login = async (req, res) => {
   const { email, password } = req.body;
@@ -31,7 +35,7 @@ const login = async (req, res) => {
       return res.status(400).json({ message: "Invalid Credentials" });
     }
 
-    generateToken(user._id, res); // Generate token and send it in the response
+    generateToken(user._id, res);
     res.status(200).json({
       message: "Login successful",
       user: {
@@ -42,6 +46,7 @@ const login = async (req, res) => {
         role: user.role,
         isVerified: user.isVerified,
         personalRoomId: user.personalRoomId,
+        createdAt: user.createdAt,
       },
     });
   } catch (error) {
@@ -73,26 +78,35 @@ const signup = async (req, res) => {
       return res.status(400).json({ message: "User already exists" });
     }
 
-    // Hash the password before saving it to the database
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
-
-    // Generate Personal Room ID
     const personalRoomId = `mf-${crypto.randomUUID()}`;
+
+    // Generate verification token
+    const rawToken = crypto.randomBytes(32).toString("hex");
+    const hashedVerificationToken = hashToken(rawToken);
+    const verificationTokenExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
 
     const newUser = new User({
       fullName,
       email: email.toLowerCase(),
       password: hashedPassword,
       personalRoomId,
+      verificationToken: hashedVerificationToken,
+      verificationTokenExpiry,
     });
 
     await newUser.save();
 
-    generateToken(newUser._id, res); // Generate token and send it in the response
+    // Send verification email (non-blocking — don't fail signup if email fails)
+    sendVerificationEmail(newUser.email, rawToken).catch((err) =>
+      console.error("Failed to send verification email:", err)
+    );
+
+    generateToken(newUser._id, res);
 
     res.status(201).json({
-      message: "Account created successfully",
+      message: "Account created successfully. Please check your email to verify your account.",
       user: {
         _id: newUser._id,
         fullName: newUser.fullName,
@@ -106,6 +120,75 @@ const signup = async (req, res) => {
     });
   } catch (error) {
     console.error("Signup Error:", error);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+const verifyEmail = async (req, res) => {
+  try {
+    const { token } = req.params;
+    if (!token) {
+      return res.status(400).json({ message: "Verification token is required" });
+    }
+
+    const hashedToken = hashToken(token);
+
+    const user = await User.findOne({
+      verificationToken: hashedToken,
+      verificationTokenExpiry: { $gt: new Date() }, // not expired
+    });
+
+    if (!user) {
+      return res.status(400).json({
+        message: "Invalid or expired verification link. Please request a new one.",
+      });
+    }
+
+    // Mark verified and clear the token fields
+    user.isVerified = true;
+    user.verificationToken = null;
+    user.verificationTokenExpiry = null;
+    await user.save();
+
+    return res.status(200).json({ message: "Email verified successfully! You can now use all features." });
+  } catch (error) {
+    console.error("Verify Email Error:", error);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+const resendVerificationEmail = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    if (user.isVerified) {
+      return res.status(400).json({ message: "Your email is already verified" });
+    }
+
+    // Rate-limit: only allow resend if previous token has been used or expired
+    const RESEND_COOLDOWN_MS = 60 * 1000; // 1 minute
+    if (
+      user.verificationTokenExpiry &&
+      user.verificationTokenExpiry > new Date(Date.now() + 24 * 60 * 60 * 1000 - RESEND_COOLDOWN_MS)
+    ) {
+      return res.status(429).json({ message: "Please wait 1 minute before requesting another email." });
+    }
+
+    // Generate a fresh token
+    const rawToken = crypto.randomBytes(32).toString("hex");
+    user.verificationToken = hashToken(rawToken);
+    user.verificationTokenExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    await user.save();
+
+    await sendVerificationEmail(user.email, rawToken);
+
+    return res.status(200).json({ message: "Verification email sent! Please check your inbox." });
+  } catch (error) {
+    console.error("Resend Verification Error:", error);
     res.status(500).json({ message: "Internal Server Error" });
   }
 };
@@ -128,19 +211,20 @@ const logout = async (_, res) => {
 
 const userProfile = async (req, res) => {
   try {
-    const user = req.user; // Get the user from the request object (set by protectRoute middleware)
+    const user = req.user;
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
 
     res.status(200).json({
-        _id: user._id,
-        fullName: user.fullName,
-        email: user.email,
-        profilePic: user.profilePic,
-        role: user.role,
-        isVerified: user.isVerified,
-        personalRoomId: user.personalRoomId,
+      _id: user._id,
+      fullName: user.fullName,
+      email: user.email,
+      profilePic: user.profilePic,
+      role: user.role,
+      isVerified: user.isVerified,
+      personalRoomId: user.personalRoomId,
+      createdAt: user.createdAt,
     });
   } catch (error) {
     console.log("Error in userProfile controller:", error);
@@ -176,4 +260,4 @@ const updateProfile = async (req, res) => {
   }
 };
 
-export { login, signup, logout, userProfile, updateProfile };
+export { login, signup, logout, userProfile, updateProfile, verifyEmail, resendVerificationEmail };

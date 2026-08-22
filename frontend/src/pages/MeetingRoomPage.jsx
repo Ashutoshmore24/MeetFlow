@@ -5,6 +5,7 @@ import { useAuthStore } from "../store/useAuthStore";
 import { useMeetingStore } from "../store/useMeetingStore";
 import ShareMeetingModal from "../components/dashboard/ShareMeetingModal";
 import toast from "react-hot-toast";
+import { Timer } from "lucide-react";
 
 const MeetingRoomPage = () => {
   const { meetingCode } = useParams();
@@ -20,6 +21,8 @@ const MeetingRoomPage = () => {
   const [isCamOff, setIsCamOff] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [mediaReady, setMediaReady] = useState(false);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const joinedAtRef = useRef(null); // tracks when the timer epoch starts
 
   const chatEndRef = useRef(null);
   const localVideoRef = useRef(null);
@@ -36,6 +39,19 @@ const MeetingRoomPage = () => {
     (m) => m.meetingCode === meetingCode
   );
   const hostId = currentMeetingDoc?.host?._id || currentMeetingDoc?.host;
+
+  // ─── Format elapsed seconds as HH:MM:SS or MM:SS ─────────────────
+  const formatElapsed = (totalSeconds) => {
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60);
+    const s = totalSeconds % 60;
+    const mm = String(m).padStart(2, "0");
+    const ss = String(s).padStart(2, "0");
+    if (h > 0) {
+      return `${String(h).padStart(2, "0")}:${mm}:${ss}`;
+    }
+    return `${mm}:${ss}`;
+  };
 
   // Correct public STUN/TURN servers for NAT traversal
   const rtcConfig = useRef({
@@ -261,6 +277,29 @@ const MeetingRoomPage = () => {
       }
     };
   }, []);
+
+  // ─── 1b. Start elapsed timer once media is ready ─────────────────
+  useEffect(() => {
+    if (!mediaReady) return;
+
+    // Prefer the DB startedAt if available, otherwise use now
+    const startedAt = currentMeetingDoc?.startedAt
+      ? new Date(currentMeetingDoc.startedAt)
+      : new Date();
+
+    joinedAtRef.current = startedAt;
+
+    // Initialise with the elapsed time that already passed (e.g. joining late)
+    const initialElapsed = Math.floor((Date.now() - startedAt.getTime()) / 1000);
+    setElapsedSeconds(Math.max(0, initialElapsed));
+
+    const timerId = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - joinedAtRef.current.getTime()) / 1000);
+      setElapsedSeconds(Math.max(0, elapsed));
+    }, 1000);
+
+    return () => clearInterval(timerId);
+  }, [mediaReady, currentMeetingDoc?.startedAt]);
 
   // ─── 2. Socket events & WebRTC signaling ─────────────────────────
   useEffect(() => {
@@ -634,7 +673,22 @@ const MeetingRoomPage = () => {
     <div className="flex flex-col h-[100dvh] text-white bg-slate-950 overflow-hidden">
       {/* Header */}
       <header className="flex items-center justify-between px-3 py-2 sm:px-4 sm:py-3 border-b border-slate-800 bg-slate-900/40 flex-shrink-0">
-        <h1 className="text-base sm:text-xl font-bold text-indigo-400">MeetFlow</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-base sm:text-xl font-bold text-indigo-400">MeetFlow</h1>
+          {/* ── Live Meeting Timer ── */}
+          {mediaReady && (
+            <div className="flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-2.5 py-1 sm:px-3 sm:py-1.5">
+              <span className="relative flex h-2 w-2 flex-shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+              <Timer className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-400 flex-shrink-0" />
+              <span className="text-[11px] sm:text-xs font-mono font-bold text-emerald-300 tracking-wider tabular-nums">
+                {formatElapsed(elapsedSeconds)}
+              </span>
+            </div>
+          )}
+        </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setShowShareModal(true)}
