@@ -11,6 +11,7 @@ import HistoryPage from "./pages/HistoryPage";
 import ProfilePage from "./pages/ProfilePage";
 import VerifyEmailPage from "./pages/VerifyEmailPage";
 import { Toaster } from "react-hot-toast";
+import { Loader } from "lucide-react";
 
 function App() { 
   const { checkAuth, isCheckingAuth, authUser } = useAuthStore(); 
@@ -22,7 +23,7 @@ function App() {
   if (isCheckingAuth) { 
     return ( 
       <div className="flex items-center justify-center h-screen text-white bg-slate-950"> 
-        <p className="font-medium tracking-wide animate-pulse">Loading...</p> 
+        <Loader className="animate-spin" size={32} /> 
       </div> 
     ); 
   } 

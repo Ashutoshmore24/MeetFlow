@@ -5,7 +5,12 @@ import { useAuthStore } from "../store/useAuthStore";
 import { useMeetingStore } from "../store/useMeetingStore";
 import ShareMeetingModal from "../components/dashboard/ShareMeetingModal";
 import toast from "react-hot-toast";
-import { Timer } from "lucide-react";
+import { Timer, Pin, PinOff, Maximize2 } from "lucide-react";
+
+// ─── Active Speaker Detection Threshold ────────────────────────────
+// RMS volume above this value (0–255 scale) marks a participant as speaking
+const SPEAKING_THRESHOLD = 15;
+const SPEAKING_CHECK_INTERVAL = 200; // ms between volume checks
 
 const MeetingRoomPage = () => {
   const { meetingCode } = useParams();
@@ -22,6 +27,7 @@ const MeetingRoomPage = () => {
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [mediaReady, setMediaReady] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [activeSpeakers, setActiveSpeakers] = useState({}); // { [id]: boolean }  — 'local' for self, socketId for remotes
   const joinedAtRef = useRef(null); // tracks when the timer epoch starts
 
   const chatEndRef = useRef(null);
@@ -34,6 +40,10 @@ const MeetingRoomPage = () => {
   // Screen sharing refs
   const screenStreamRef = useRef(null); // Holds the screen capture MediaStream
   const cameraTrackRef = useRef(null);  // Remembers the original camera track to restore after screen share ends
+  // Active speaker detection refs
+  const audioContextRef = useRef(null);       // Single AudioContext shared by all analysers
+  const localAnalyserRef = useRef(null);      // { analyser, source, intervalId }
+  const remoteAnalysersRef = useRef({});       // { [socketId]: { analyser, source, intervalId } }
 
   const currentMeetingDoc = upcomingMeetings?.find(
     (m) => m.meetingCode === meetingCode
@@ -160,6 +170,64 @@ const MeetingRoomPage = () => {
     []
   );
 
+  // ─── Active speaker detection helpers ──────────────────────────────
+  const getAudioContext = useCallback(() => {
+    if (!audioContextRef.current) {
+      audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    // Resume if suspended (browsers require user gesture)
+    if (audioContextRef.current.state === 'suspended') {
+      audioContextRef.current.resume();
+    }
+    return audioContextRef.current;
+  }, []);
+
+  const startSpeakerDetection = useCallback((stream, id) => {
+    if (!stream) return;
+    const audioTracks = stream.getAudioTracks();
+    if (audioTracks.length === 0) return;
+
+    try {
+      const ctx = getAudioContext();
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 512;
+      analyser.smoothingTimeConstant = 0.3;
+      source.connect(analyser);
+
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+      const intervalId = setInterval(() => {
+        analyser.getByteFrequencyData(dataArray);
+        // Calculate RMS (root mean square) for a more accurate volume reading
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+          sum += dataArray[i] * dataArray[i];
+        }
+        const rms = Math.sqrt(sum / dataArray.length);
+        const isSpeaking = rms > SPEAKING_THRESHOLD;
+
+        setActiveSpeakers(prev => {
+          if (prev[id] === isSpeaking) return prev; // no change, skip re-render
+          return { ...prev, [id]: isSpeaking };
+        });
+      }, SPEAKING_CHECK_INTERVAL);
+
+      return { analyser, source, intervalId };
+    } catch (err) {
+      console.warn('Error setting up speaker detection for', id, err);
+      return null;
+    }
+  }, [getAudioContext]);
+
+  const stopSpeakerDetection = useCallback((detectionObj) => {
+    if (!detectionObj) return;
+    if (detectionObj.intervalId) clearInterval(detectionObj.intervalId);
+    try {
+      detectionObj.source?.disconnect();
+    } catch { /* already disconnected */ }
+  }, []);
+
   // ─── Cleanup a single peer connection ────────────────────────────
   const closePeerConnection = useCallback((socketId) => {
     const pc = peerConnections.current[socketId];
@@ -259,6 +327,8 @@ const MeetingRoomPage = () => {
         if (localVideoRef.current) {
           localVideoRef.current.srcObject = stream;
         }
+        // Start active speaker detection for local stream
+        localAnalyserRef.current = startSpeakerDetection(stream, 'local');
         setMediaReady(true);
       } catch (err) {
         console.error("Unexpected error accessing media devices:", err);
@@ -271,6 +341,9 @@ const MeetingRoomPage = () => {
 
     return () => {
       cancelled = true;
+      // Clean up local speaker detection
+      stopSpeakerDetection(localAnalyserRef.current);
+      localAnalyserRef.current = null;
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach((track) => track.stop());
         localStreamRef.current = null;
@@ -498,6 +571,46 @@ const MeetingRoomPage = () => {
     });
   }, [remoteStreams, participants]);
 
+  // ─── 5. Active speaker detection for remote streams ──────────────
+  useEffect(() => {
+    // Start detection for any new remote streams
+    Object.entries(remoteStreams).forEach(([socketId, stream]) => {
+      if (!remoteAnalysersRef.current[socketId]) {
+        const detection = startSpeakerDetection(stream, socketId);
+        if (detection) {
+          remoteAnalysersRef.current[socketId] = detection;
+        }
+      }
+    });
+
+    // Stop detection for streams that no longer exist
+    Object.keys(remoteAnalysersRef.current).forEach((socketId) => {
+      if (!remoteStreams[socketId]) {
+        stopSpeakerDetection(remoteAnalysersRef.current[socketId]);
+        delete remoteAnalysersRef.current[socketId];
+        setActiveSpeakers(prev => {
+          const next = { ...prev };
+          delete next[socketId];
+          return next;
+        });
+      }
+    });
+  }, [remoteStreams, startSpeakerDetection, stopSpeakerDetection]);
+
+  // ─── Cleanup all speaker detection on unmount ─────────────────────
+  useEffect(() => {
+    return () => {
+      // Clean up all remote analysers
+      Object.values(remoteAnalysersRef.current).forEach(stopSpeakerDetection);
+      remoteAnalysersRef.current = {};
+      // Close audio context
+      if (audioContextRef.current) {
+        audioContextRef.current.close().catch(() => {});
+        audioContextRef.current = null;
+      }
+    };
+  }, [stopSpeakerDetection]);
+
   // ─── Handlers ─────────────────────────────────────────────────────
   const handleLeaveMeeting = () => {
     // Close all peer connections
@@ -656,10 +769,29 @@ const MeetingRoomPage = () => {
   const [showSidebar, setShowSidebar] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
 
+  // ─── Pin / Spotlight state ───────────────────────────────────────
+  const [pinnedId, setPinnedId] = useState(null); // null | 'local' | socketId
+
+  const handlePin = useCallback((id) => {
+    setPinnedId((prev) => (prev === id ? null : id));
+  }, []);
+
+  const handleUnpin = useCallback(() => {
+    setPinnedId(null);
+  }, []);
+
+  // Auto-unpin if the pinned remote participant leaves
+  useEffect(() => {
+    if (pinnedId && pinnedId !== 'local') {
+      const stillHere = otherParticipants.some((p) => p.socketId === pinnedId);
+      if (!stillHere) setPinnedId(null);
+    }
+  }, [pinnedId, otherParticipants]);
+
   // Total video tiles (self + remote)
   const totalTiles = 1 + otherParticipants.length;
 
-  // Compute responsive grid class based on tile count
+  // Compute responsive grid class based on tile count (only used when nothing is pinned)
   const getVideoGridClass = () => {
     if (totalTiles === 1) return "grid-cols-1 max-w-lg mx-auto";
     if (totalTiles === 2) return "grid-cols-1 sm:grid-cols-2 max-w-3xl mx-auto";
@@ -709,13 +841,216 @@ const MeetingRoomPage = () => {
 
       {/* Main Container */}
       <main className="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0">
-        {/* Core Stage Container — Video Grid */}
+        {/* Core Stage Container — Video Grid or Spotlight Layout */}
         <div className="flex-1 overflow-y-auto p-2 sm:p-4 min-h-0">
+
+          {/* ════════════════════════════════════════════════════════════
+              SPOTLIGHT LAYOUT — When a tile is pinned
+              ════════════════════════════════════════════════════════════ */}
+          {pinnedId ? (
+            <div className="flex flex-col h-full gap-2 sm:gap-3">
+              {/* ── Main Stage: Pinned Tile ── */}
+              <div className="flex-1 min-h-0">
+                {pinnedId === 'local' ? (
+                  /* Pinned: LOCAL self */
+                  <div
+                    className={`relative w-full h-full border-2 shadow-lg bg-slate-900 rounded-lg sm:rounded-xl transition-all duration-300 ${
+                      isScreenSharing
+                        ? "border-emerald-500/60 ring-1 ring-emerald-500/30"
+                        : activeSpeakers['local']
+                          ? "border-emerald-400 ring-2 ring-emerald-400/40 shadow-emerald-500/20 shadow-xl"
+                          : "border-indigo-500/50 ring-1 ring-indigo-500/20"
+                    }`}
+                  >
+                    <video
+                      ref={localVideoRef}
+                      autoPlay
+                      playsInline
+                      muted
+                      className={`w-full h-full rounded-lg sm:rounded-xl ${isScreenSharing ? "object-contain" : "object-cover transform -scale-x-100"}`}
+                    />
+                    <div className={`absolute bottom-2 left-2 sm:bottom-3 sm:left-3 px-2.5 py-1 text-[11px] sm:text-xs rounded-md font-semibold border transition-all duration-300 ${
+                      activeSpeakers['local']
+                        ? "bg-emerald-950/80 text-emerald-300 border-emerald-700/60"
+                        : "bg-slate-950/80 text-indigo-300 border-slate-800"
+                    }`}>
+                      You {isMuted && "🎙️"} {isScreenSharing && "🖥️"}
+                    </div>
+                    {/* Speaking indicator */}
+                    {activeSpeakers['local'] && !isScreenSharing && (
+                      <div className="absolute top-2 left-2 sm:top-3 sm:left-3 flex items-center gap-1 bg-emerald-950/80 px-1.5 py-0.5 rounded-md border border-emerald-700/50">
+                        <span className="relative flex h-1.5 w-1.5">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-400"></span>
+                        </span>
+                        <span className="text-[9px] text-emerald-400 font-semibold">Speaking</span>
+                      </div>
+                    )}
+                    {/* Unpin button */}
+                    <button
+                      onClick={handleUnpin}
+                      className="absolute top-2 right-2 sm:top-3 sm:right-3 flex items-center gap-1 bg-slate-950/80 hover:bg-red-950/80 px-2 py-1 rounded-lg border border-slate-700 hover:border-red-500/50 text-slate-300 hover:text-red-400 transition-all cursor-pointer group/unpin"
+                      title="Unpin"
+                    >
+                      <PinOff className="w-3 h-3" />
+                      <span className="text-[9px] font-semibold">Unpin</span>
+                    </button>
+                  </div>
+                ) : (
+                  /* Pinned: REMOTE participant */
+                  (() => {
+                    const pinnedParticipant = otherParticipants.find(p => p.socketId === pinnedId);
+                    if (!pinnedParticipant) return null;
+                    const isSpeaking = activeSpeakers[pinnedId];
+                    return (
+                      <div
+                        className={`relative w-full h-full border-2 shadow-lg bg-slate-900 rounded-lg sm:rounded-xl transition-all duration-300 ${
+                          isSpeaking
+                            ? "border-emerald-400 ring-2 ring-emerald-400/40 shadow-emerald-500/20 shadow-xl"
+                            : "border-indigo-500/50 ring-1 ring-indigo-500/20"
+                        }`}
+                      >
+                        <video
+                          ref={(el) => {
+                            remoteVideoRefs.current[pinnedParticipant.socketId] = el;
+                            if (el && remoteStreams[pinnedParticipant.socketId]) {
+                              if (el.srcObject !== remoteStreams[pinnedParticipant.socketId]) {
+                                el.srcObject = remoteStreams[pinnedParticipant.socketId];
+                              }
+                            }
+                          }}
+                          autoPlay
+                          playsInline
+                          className="object-cover w-full h-full rounded-lg sm:rounded-xl"
+                        />
+                        <div className={`absolute bottom-2 left-2 sm:bottom-3 sm:left-3 px-2.5 py-1 text-[11px] sm:text-xs rounded-md font-semibold border transition-all duration-300 ${
+                          isSpeaking
+                            ? "bg-emerald-950/80 text-emerald-300 border-emerald-700/60"
+                            : "bg-slate-950/80 text-slate-300 border-slate-800"
+                        }`}>
+                          {pinnedParticipant.fullName}
+                        </div>
+                        {/* Speaking indicator */}
+                        {isSpeaking && (
+                          <div className="absolute top-2 left-2 sm:top-3 sm:left-3 flex items-center gap-1 bg-emerald-950/80 px-1.5 py-0.5 rounded-md border border-emerald-700/50">
+                            <span className="relative flex h-1.5 w-1.5">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-400"></span>
+                            </span>
+                            <span className="text-[9px] text-emerald-400 font-semibold">Speaking</span>
+                          </div>
+                        )}
+                        {/* Unpin button */}
+                        <button
+                          onClick={handleUnpin}
+                          className="absolute top-2 right-2 sm:top-3 sm:right-3 flex items-center gap-1 bg-slate-950/80 hover:bg-red-950/80 px-2 py-1 rounded-lg border border-slate-700 hover:border-red-500/50 text-slate-300 hover:text-red-400 transition-all cursor-pointer"
+                          title="Unpin"
+                        >
+                          <PinOff className="w-3 h-3" />
+                          <span className="text-[9px] font-semibold">Unpin</span>
+                        </button>
+                      </div>
+                    );
+                  })()
+                )}
+              </div>
+
+              {/* ── Filmstrip: Unpinned tiles ── */}
+              <div className="flex-shrink-0 flex gap-2 overflow-x-auto pb-1 scroll-smooth [&::-webkit-scrollbar]:h-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-slate-800 [&::-webkit-scrollbar-thumb]:rounded-full">
+                {/* Local tile in filmstrip (if not pinned) */}
+                {pinnedId !== 'local' && (
+                  <div
+                    onClick={() => handlePin('local')}
+                    className={`relative flex-shrink-0 w-36 sm:w-44 lg:w-52 border-2 shadow-md aspect-video bg-slate-900 rounded-lg transition-all duration-300 cursor-pointer group/tile hover:border-indigo-500/60 ${
+                      isScreenSharing
+                        ? "border-emerald-500/60"
+                        : activeSpeakers['local']
+                          ? "border-emerald-400 ring-1 ring-emerald-400/30"
+                          : "border-slate-800"
+                    }`}
+                  >
+                    <video
+                      ref={localVideoRef}
+                      autoPlay
+                      playsInline
+                      muted
+                      className={`w-full h-full rounded-lg ${isScreenSharing ? "object-contain" : "object-cover transform -scale-x-100"}`}
+                    />
+                    <div className="absolute bottom-1 left-1 bg-slate-950/80 px-1.5 py-0.5 text-[9px] rounded text-indigo-300 font-semibold border border-slate-800">
+                      You
+                    </div>
+                    {/* Pin overlay on hover */}
+                    <div className="absolute inset-0 bg-slate-950/0 group-hover/tile:bg-slate-950/40 transition-all duration-200 rounded-lg flex items-center justify-center">
+                      <div className="opacity-0 group-hover/tile:opacity-100 transition-opacity duration-200 flex items-center gap-1 bg-indigo-600/90 px-2 py-1 rounded-md">
+                        <Pin className="w-2.5 h-2.5 text-white" />
+                        <span className="text-[9px] text-white font-semibold">Pin</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Remote tiles in filmstrip (excluding the pinned one) */}
+                {otherParticipants
+                  .filter(p => p.socketId !== pinnedId)
+                  .map((participant) => {
+                    const isSpeaking = activeSpeakers[participant.socketId];
+                    return (
+                      <div
+                        key={participant.socketId}
+                        onClick={() => handlePin(participant.socketId)}
+                        className={`relative flex-shrink-0 w-36 sm:w-44 lg:w-52 border-2 shadow-md aspect-video bg-slate-900 rounded-lg transition-all duration-300 cursor-pointer group/tile hover:border-indigo-500/60 ${
+                          isSpeaking
+                            ? "border-emerald-400 ring-1 ring-emerald-400/30"
+                            : "border-slate-800"
+                        }`}
+                      >
+                        <video
+                          ref={(el) => {
+                            remoteVideoRefs.current[participant.socketId] = el;
+                            if (el && remoteStreams[participant.socketId]) {
+                              if (el.srcObject !== remoteStreams[participant.socketId]) {
+                                el.srcObject = remoteStreams[participant.socketId];
+                              }
+                            }
+                          }}
+                          autoPlay
+                          playsInline
+                          className="object-cover w-full h-full rounded-lg"
+                        />
+                        <div className="absolute bottom-1 left-1 bg-slate-950/80 px-1.5 py-0.5 text-[9px] rounded text-slate-300 font-medium border border-slate-800">
+                          {participant.fullName}
+                        </div>
+                        {/* Pin overlay on hover */}
+                        <div className="absolute inset-0 bg-slate-950/0 group-hover/tile:bg-slate-950/40 transition-all duration-200 rounded-lg flex items-center justify-center">
+                          <div className="opacity-0 group-hover/tile:opacity-100 transition-opacity duration-200 flex items-center gap-1 bg-indigo-600/90 px-2 py-1 rounded-md">
+                            <Pin className="w-2.5 h-2.5 text-white" />
+                            <span className="text-[9px] text-white font-semibold">Pin</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+          ) : (
+
+          /* ════════════════════════════════════════════════════════════
+             DEFAULT GRID LAYOUT — No tile pinned
+             ════════════════════════════════════════════════════════════ */
           <div
             className={`grid gap-2 sm:gap-3 lg:gap-4 h-full content-center ${getVideoGridClass()}`}
           >
             {/* Local Self Preview Frame */}
-            <div className={`relative w-full border shadow-lg aspect-video bg-slate-900 rounded-lg sm:rounded-xl ${isScreenSharing ? "border-emerald-500/60 ring-1 ring-emerald-500/30" : "border-slate-800"}`}>
+            <div
+              onClick={() => handlePin('local')}
+              className={`relative w-full border-2 shadow-lg aspect-video bg-slate-900 rounded-lg sm:rounded-xl transition-all duration-300 cursor-pointer group/tile ${
+                isScreenSharing
+                  ? "border-emerald-500/60 ring-1 ring-emerald-500/30"
+                  : activeSpeakers['local']
+                    ? "border-emerald-400 ring-2 ring-emerald-400/40 shadow-emerald-500/20 shadow-xl"
+                    : "border-slate-800 hover:border-indigo-500/40"
+              }`}
+            >
               <video
                 ref={localVideoRef}
                 autoPlay
@@ -723,38 +1058,89 @@ const MeetingRoomPage = () => {
                 muted
                 className={`w-full h-full rounded-lg sm:rounded-xl ${isScreenSharing ? "object-contain" : "object-cover transform -scale-x-100"}`}
               />
-              <div className="absolute bottom-1.5 left-1.5 sm:bottom-2 sm:left-2 bg-slate-950/80 px-2 py-0.5 sm:px-2.5 sm:py-1 text-[10px] sm:text-xs rounded-md text-indigo-300 font-semibold border border-slate-800">
+              <div className={`absolute bottom-1.5 left-1.5 sm:bottom-2 sm:left-2 px-2 py-0.5 sm:px-2.5 sm:py-1 text-[10px] sm:text-xs rounded-md font-semibold border transition-all duration-300 ${
+                activeSpeakers['local']
+                  ? "bg-emerald-950/80 text-emerald-300 border-emerald-700/60"
+                  : "bg-slate-950/80 text-indigo-300 border-slate-800"
+              }`}>
                 You {isMuted && "🎙️"} {isScreenSharing && "🖥️"}
+              </div>
+              {/* Speaking indicator pulse */}
+              {activeSpeakers['local'] && !isScreenSharing && (
+                <div className="absolute top-1.5 right-1.5 sm:top-2 sm:right-2 flex items-center gap-1 bg-emerald-950/80 px-1.5 py-0.5 rounded-md border border-emerald-700/50">
+                  <span className="relative flex h-1.5 w-1.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-400"></span>
+                  </span>
+                  <span className="text-[9px] text-emerald-400 font-semibold">Speaking</span>
+                </div>
+              )}
+              {/* Pin overlay on hover */}
+              <div className="absolute inset-0 bg-slate-950/0 group-hover/tile:bg-slate-950/30 transition-all duration-200 rounded-lg sm:rounded-xl flex items-center justify-center">
+                <div className="opacity-0 group-hover/tile:opacity-100 transition-opacity duration-200 flex items-center gap-1.5 bg-indigo-600/90 backdrop-blur-sm px-3 py-1.5 rounded-lg shadow-lg">
+                  <Maximize2 className="w-3.5 h-3.5 text-white" />
+                  <span className="text-[10px] text-white font-semibold">Click to Spotlight</span>
+                </div>
               </div>
             </div>
 
             {/* Remote Active Stream Connections Grid */}
-            {otherParticipants.map((participant) => (
-              <div
-                key={participant.socketId}
-                className="relative w-full border shadow-lg aspect-video bg-slate-900 rounded-lg sm:rounded-xl border-slate-800"
-              >
-                <video
-                  ref={(el) => {
-                    remoteVideoRefs.current[participant.socketId] = el;
-                    if (el && remoteStreams[participant.socketId]) {
-                      if (
-                        el.srcObject !== remoteStreams[participant.socketId]
-                      ) {
-                        el.srcObject = remoteStreams[participant.socketId];
+            {otherParticipants.map((participant) => {
+              const isSpeaking = activeSpeakers[participant.socketId];
+              return (
+                <div
+                  key={participant.socketId}
+                  onClick={() => handlePin(participant.socketId)}
+                  className={`relative w-full border-2 shadow-lg aspect-video bg-slate-900 rounded-lg sm:rounded-xl transition-all duration-300 cursor-pointer group/tile ${
+                    isSpeaking
+                      ? "border-emerald-400 ring-2 ring-emerald-400/40 shadow-emerald-500/20 shadow-xl"
+                      : "border-slate-800 hover:border-indigo-500/40"
+                  }`}
+                >
+                  <video
+                    ref={(el) => {
+                      remoteVideoRefs.current[participant.socketId] = el;
+                      if (el && remoteStreams[participant.socketId]) {
+                        if (
+                          el.srcObject !== remoteStreams[participant.socketId]
+                        ) {
+                          el.srcObject = remoteStreams[participant.socketId];
+                        }
                       }
-                    }
-                  }}
-                  autoPlay
-                  playsInline
-                  className="object-cover w-full h-full rounded-lg sm:rounded-xl"
-                />
-                <div className="absolute bottom-1.5 left-1.5 sm:bottom-2 sm:left-2 bg-slate-950/80 px-2 py-0.5 sm:px-2.5 sm:py-1 text-[10px] sm:text-xs rounded-md text-slate-300 font-medium border border-slate-800">
-                  {participant.fullName}
+                    }}
+                    autoPlay
+                    playsInline
+                    className="object-cover w-full h-full rounded-lg sm:rounded-xl"
+                  />
+                  <div className={`absolute bottom-1.5 left-1.5 sm:bottom-2 sm:left-2 px-2 py-0.5 sm:px-2.5 sm:py-1 text-[10px] sm:text-xs rounded-md font-medium border transition-all duration-300 ${
+                    isSpeaking
+                      ? "bg-emerald-950/80 text-emerald-300 border-emerald-700/60"
+                      : "bg-slate-950/80 text-slate-300 border-slate-800"
+                  }`}>
+                    {participant.fullName}
+                  </div>
+                  {/* Speaking indicator pulse */}
+                  {isSpeaking && (
+                    <div className="absolute top-1.5 right-1.5 sm:top-2 sm:right-2 flex items-center gap-1 bg-emerald-950/80 px-1.5 py-0.5 rounded-md border border-emerald-700/50">
+                      <span className="relative flex h-1.5 w-1.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-400"></span>
+                      </span>
+                      <span className="text-[9px] text-emerald-400 font-semibold">Speaking</span>
+                    </div>
+                  )}
+                  {/* Pin overlay on hover */}
+                  <div className="absolute inset-0 bg-slate-950/0 group-hover/tile:bg-slate-950/30 transition-all duration-200 rounded-lg sm:rounded-xl flex items-center justify-center">
+                    <div className="opacity-0 group-hover/tile:opacity-100 transition-opacity duration-200 flex items-center gap-1.5 bg-indigo-600/90 backdrop-blur-sm px-3 py-1.5 rounded-lg shadow-lg">
+                      <Maximize2 className="w-3.5 h-3.5 text-white" />
+                      <span className="text-[10px] text-white font-semibold">Click to Spotlight</span>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
+          )}
         </div>
 
         {/* Sidebar Split Panel: Roster + Chat */}
