@@ -16,11 +16,13 @@ MeetFlow enables users to create, join, and schedule meetings, communicate throu
 ```
 MeetFlow/
 ├── .gitignore
+├── README.md
 ├── backend/
 │   ├── package-lock.json
 │   ├── package.json
 │   └── src/
 │       ├── config/
+│       │   ├── cloudinary.js
 │       │   └── db.js
 │       ├── controllers/
 │       │   ├── auth.controller.js
@@ -29,6 +31,7 @@ MeetFlow/
 │       │   ├── arcjet.js
 │       │   ├── env.js
 │       │   ├── generateMeetingCode.js
+│       │   ├── mailer.js
 │       │   └── utils.js
 │       ├── middleware/
 │       │   ├── arcjet.middleware.js
@@ -54,6 +57,7 @@ MeetFlow/
     ├── src/
     │   ├── App.jsx
     │   ├── assets/
+    │   │   ├── MeetFlow Logo.png
     │   │   └── upcomming1.png
     │   ├── components/
     │   │   ├── Navbar.jsx
@@ -61,7 +65,8 @@ MeetFlow/
     │   │   ├── Sidebar.jsx
     │   │   └── dashboard/
     │   │       ├── JoinMeetingModal.jsx
-    │   │       └── ScheduleMeetingModal.jsx
+    │   │       ├── ScheduleMeetingModal.jsx
+    │   │       └── ShareMeetingModal.jsx
     │   ├── index.css
     │   ├── lib/
     │   │   ├── axios.js
@@ -73,8 +78,10 @@ MeetFlow/
     │   │   ├── LoginPage.jsx
     │   │   ├── MeetingRoomPage.jsx
     │   │   ├── PersonalRoomPage.jsx
+    │   │   ├── ProfilePage.jsx
     │   │   ├── SignupPage.jsx
-    │   │   └── UpcomingPage.jsx
+    │   │   ├── UpcomingPage.jsx
+    │   │   └── VerifyEmailPage.jsx
     │   └── store/
     │       ├── useAuthStore.js
     │       └── useMeetingStore.js
