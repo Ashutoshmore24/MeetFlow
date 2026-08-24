@@ -1,6 +1,7 @@
 import { Server } from "socket.io";
 import { meetingParticipants, userSocketMap } from "./roomManager.js";
 import ENV from "../lib/env.js";
+import Meeting from "../models/Meeting.js";
 
 let io;
 
@@ -60,7 +61,7 @@ export const initializeSocket = (server) => {
     });
 
     // Helper function to deduplicate structural cleanup logic
-    const handleUserRemoval = (meetingCode) => {
+    const handleUserRemoval = async (meetingCode) => {
       if (!meetingParticipants[meetingCode]) return;
 
       const leavingUser = meetingParticipants[meetingCode].find(
@@ -86,6 +87,17 @@ export const initializeSocket = (server) => {
       // Clean up memory if the room becomes empty
       if (meetingParticipants[meetingCode].length === 0) {
         delete meetingParticipants[meetingCode];
+
+        // Auto-end the meeting in the database so it appears in history
+        try {
+          await Meeting.findOneAndUpdate(
+            { meetingCode, status: { $in: ["active", "scheduled"] } },
+            { status: "ended", endedAt: new Date() }
+          );
+          console.log(`Meeting ${meetingCode} auto-ended (room empty)`);
+        } catch (err) {
+          console.error(`Error auto-ending meeting ${meetingCode}:`, err);
+        }
       } else {
         io.to(meetingCode).emit(
           "participants-updated",
@@ -95,8 +107,8 @@ export const initializeSocket = (server) => {
     };
 
     // LEAVE ROOM
-    socket.on("leave-room", ({ meetingCode, userId }) => {
-      handleUserRemoval(meetingCode);
+    socket.on("leave-room", async ({ meetingCode, userId }) => {
+      await handleUserRemoval(meetingCode);
       delete userSocketMap[socket.id];
       socket.leave(meetingCode);
       console.log(`User ${userId} manually left room ${meetingCode}`);
@@ -142,10 +154,10 @@ export const initializeSocket = (server) => {
     });
 
     // DISCONNECT
-    socket.on("disconnect", () => {
+    socket.on("disconnect", async () => {
       const userData = userSocketMap[socket.id];
       if (userData) {
-        handleUserRemoval(userData.meetingCode);
+        await handleUserRemoval(userData.meetingCode);
         delete userSocketMap[socket.id];
       }
       console.log(`User Disconnected: ${socket.id}`);
