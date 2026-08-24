@@ -65,10 +65,23 @@ const joinMeeting = async (req, res) => {
       });
     }
 
+    // Build the update: always add the user to participants
+    const updateOps = {
+      $addToSet: { participants: req.user._id },
+    };
+
+    // If the meeting is still "scheduled", activate it with a startedAt timestamp
+    if (meeting.status === "scheduled") {
+      updateOps.$set = {
+        status: "active",
+        startedAt: new Date(),
+      };
+    }
+
     const populatedMeeting = await Meeting.findOneAndUpdate(
       { meetingCode },
-      { $addToSet: { participants: req.user._id } }, // $addToSet prevents duplicates automatically
-      { new: true } // Returns the updated document
+      updateOps,
+      { new: true }
     )
       .populate("host", "fullName email profilePic")
       .populate("participants", "fullName email profilePic");
@@ -215,7 +228,7 @@ const getHistoryMeetings = async (req, res) => {
     })
     .populate("host", "fullName email profilePic")
     .populate("participants", "fullName email profilePic")
-    .sort({ scheduledFor: -1  }); // most recent meetings first
+    .sort({ endedAt: -1, startedAt: -1, createdAt: -1 }); // most recently ended first
 
     return res.status(200).json({
       success: true,

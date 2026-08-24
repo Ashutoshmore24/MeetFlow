@@ -68,18 +68,23 @@ const HistoryPage = () => {
     );
   }
 
+  // Pick the best available date for a meeting (startedAt > endedAt > scheduledFor > createdAt)
+  const getMeetingDate = (meeting) => {
+    return meeting.startedAt || meeting.endedAt || meeting.scheduledFor || meeting.createdAt;
+  };
+
   const getGroupedMeetings = () => {
     if (!historyMeetings || historyMeetings.length === 0) return {};
 
-    // Sort descending (newest first)
+    // Sort descending (newest first) using the best available date
     const sorted = [...historyMeetings].sort(
-      (a, b) => new Date(b.scheduledFor) - new Date(a.scheduledFor)
+      (a, b) => new Date(getMeetingDate(b)) - new Date(getMeetingDate(a))
     );
 
     // Group by formatted date
     const grouped = {};
     sorted.forEach((meeting) => {
-      const dateObj = new Date(meeting.scheduledFor);
+      const dateObj = new Date(getMeetingDate(meeting));
       if (isNaN(dateObj)) return; // skip invalid dates
       
       const dateKey = dateObj.toLocaleDateString('en-US', {
@@ -151,7 +156,7 @@ const HistoryPage = () => {
                             {meeting.title || 'Untitled Meeting'}
                           </h2>
                           <div className="flex flex-wrap items-center mt-2 text-sm gap-x-2 text-slate-400">
-                            <time dateTime={meeting.scheduledFor}>{formatDate(meeting.scheduledFor)}</time>
+                            <time dateTime={getMeetingDate(meeting)}>{formatDate(getMeetingDate(meeting))}</time>
                             <span className="text-white/20">•</span>
                             <span className="truncate">Hosted by <span className="font-medium text-slate-300">{meeting.host?.fullName || 'Unknown'}</span></span>
                             {/* Duration badge */}
