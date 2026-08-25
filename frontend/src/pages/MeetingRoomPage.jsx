@@ -5,7 +5,7 @@ import { useAuthStore } from "../store/useAuthStore";
 import { useMeetingStore } from "../store/useMeetingStore";
 import ShareMeetingModal from "../components/dashboard/ShareMeetingModal";
 import toast from "react-hot-toast";
-import { Timer, Pin, PinOff, Maximize2 } from "lucide-react";
+import { Timer, Pin, PinOff, Maximize2, Shield, MicOff, VideoOff, UserX, Check, X, ShieldCheck } from "lucide-react";
 
 // ─── Active Speaker Detection Threshold ────────────────────────────
 // RMS volume above this value (0–255 scale) marks a participant as speaking
@@ -30,6 +30,11 @@ const MeetingRoomPage = () => {
   const [activeSpeakers, setActiveSpeakers] = useState({}); // { [id]: boolean }  — 'local' for self, socketId for remotes
   const joinedAtRef = useRef(null); // tracks when the timer epoch starts
 
+  // Lobby / waiting room state
+  const [inLobby, setInLobby] = useState(false);        // true when current user is waiting in lobby
+  const [lobbyEnabled, setLobbyEnabled] = useState(false); // host's lobby toggle
+  const [lobbyQueue, setLobbyQueue] = useState([]);       // waiting users (host sees this)
+
   const chatEndRef = useRef(null);
   const localVideoRef = useRef(null);
   const localStreamRef = useRef(null);
@@ -49,6 +54,12 @@ const MeetingRoomPage = () => {
     (m) => m.meetingCode === meetingCode
   );
   const hostId = currentMeetingDoc?.host?._id || currentMeetingDoc?.host;
+
+  // Derive host status from the live socket participant data (set by the backend after DB lookup)
+  // This works for all meeting types (instant, scheduled, personal)
+  const isHost = participants.some(
+    (p) => p.userId === authUser?._id && p.isHost
+  );
 
   // ─── Format elapsed seconds as HH:MM:SS or MM:SS ─────────────────
   const formatElapsed = (totalSeconds) => {
@@ -530,6 +541,127 @@ const MeetingRoomPage = () => {
     socket.on("webrtc-answer", handleWebRTCAnswer);
     socket.on("webrtc-ice-candidate", handleICECandidate);
 
+    // ── Host enforcement events (received by participants) ────────
+    const handleForceMute = () => {
+      const stream = localStreamRef.current;
+      if (stream) {
+        const audioTrack = stream.getAudioTracks()[0];
+        if (audioTrack) {
+          audioTrack.enabled = false;
+          setIsMuted(true);
+        }
+      }
+      toast.error("The host has muted your microphone.", {
+        icon: "🎙️",
+        style: {
+          background: "#1e1b4b",
+          color: "#e0e7ff",
+          border: "1px solid rgba(99, 102, 241, 0.3)",
+        },
+      });
+    };
+
+    const handleForceCameraOff = () => {
+      const stream = localStreamRef.current;
+      if (stream) {
+        const videoTrack = stream.getVideoTracks()[0];
+        if (videoTrack) {
+          videoTrack.enabled = false;
+          setIsCamOff(true);
+        }
+      }
+      toast.error("The host has turned off your camera.", {
+        icon: "📷",
+        style: {
+          background: "#1e1b4b",
+          color: "#e0e7ff",
+          border: "1px solid rgba(99, 102, 241, 0.3)",
+        },
+      });
+    };
+
+    const handleKicked = () => {
+      // Clean up all peer connections
+      Object.keys(peerConnections.current).forEach((sid) => {
+        closePeerConnection(sid);
+      });
+      // Stop screen share if active
+      if (screenStreamRef.current) {
+        screenStreamRef.current.getTracks().forEach((t) => t.stop());
+        screenStreamRef.current = null;
+      }
+      // Stop local media
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach((t) => t.stop());
+        localStreamRef.current = null;
+      }
+      socket.disconnect();
+      toast.error("You have been removed from the meeting by the host.", {
+        icon: "🚫",
+        duration: 5000,
+        style: {
+          background: "#450a0a",
+          color: "#fecaca",
+          border: "1px solid rgba(239, 68, 68, 0.4)",
+        },
+      });
+      navigate("/");
+    };
+
+    socket.on("force-mute", handleForceMute);
+    socket.on("force-camera-off", handleForceCameraOff);
+    socket.on("you-were-kicked", handleKicked);
+
+    // ── Lobby events ──────────────────────────────────────────────────
+    const handleWaitingInLobby = () => {
+      setInLobby(true);
+    };
+
+    const handleAdmittedFromLobby = () => {
+      setInLobby(false);
+      toast.success("You've been admitted to the meeting!", {
+        icon: "✅",
+        style: {
+          background: "#064e3b",
+          color: "#d1fae5",
+          border: "1px solid rgba(16, 185, 129, 0.4)",
+        },
+      });
+    };
+
+    const handleDeniedFromLobby = () => {
+      // Clean up media
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach((t) => t.stop());
+        localStreamRef.current = null;
+      }
+      socket.disconnect();
+      toast.error("The host has denied your request to join.", {
+        icon: "🚫",
+        duration: 5000,
+        style: {
+          background: "#450a0a",
+          color: "#fecaca",
+          border: "1px solid rgba(239, 68, 68, 0.4)",
+        },
+      });
+      navigate("/");
+    };
+
+    const handleLobbyStatusChanged = ({ enabled }) => {
+      setLobbyEnabled(enabled);
+    };
+
+    const handleLobbyQueueUpdated = (queue) => {
+      setLobbyQueue(queue);
+    };
+
+    socket.on("waiting-in-lobby", handleWaitingInLobby);
+    socket.on("admitted-from-lobby", handleAdmittedFromLobby);
+    socket.on("denied-from-lobby", handleDeniedFromLobby);
+    socket.on("lobby-status-changed", handleLobbyStatusChanged);
+    socket.on("lobby-queue-updated", handleLobbyQueueUpdated);
+
     return () => {
       // Close all peer connections
       Object.keys(peerConnections.current).forEach((socketId) => {
@@ -545,6 +677,14 @@ const MeetingRoomPage = () => {
       socket.off("webrtc-offer", handleWebRTCOffer);
       socket.off("webrtc-answer", handleWebRTCAnswer);
       socket.off("webrtc-ice-candidate", handleICECandidate);
+      socket.off("force-mute", handleForceMute);
+      socket.off("force-camera-off", handleForceCameraOff);
+      socket.off("you-were-kicked", handleKicked);
+      socket.off("waiting-in-lobby", handleWaitingInLobby);
+      socket.off("admitted-from-lobby", handleAdmittedFromLobby);
+      socket.off("denied-from-lobby", handleDeniedFromLobby);
+      socket.off("lobby-status-changed", handleLobbyStatusChanged);
+      socket.off("lobby-queue-updated", handleLobbyQueueUpdated);
       socket.disconnect();
     };
   }, [
@@ -554,6 +694,7 @@ const MeetingRoomPage = () => {
     createPeerConnection,
     closePeerConnection,
     flushIceCandidateQueue,
+    navigate,
   ]);
 
   // ─── 3. Auto-scroll chat ─────────────────────────────────────────
@@ -673,6 +814,51 @@ const MeetingRoomPage = () => {
         toast.error("No camera track available.");
       }
     }
+  };
+
+  // ─── Host control actions ─────────────────────────────────────────
+  const handleHostMute = (targetSocketId) => {
+    socket.emit("host-mute-participant", { meetingCode, targetSocketId });
+    toast.success("Participant muted.", {
+      icon: "🎙️",
+      style: { background: "#1e1b4b", color: "#e0e7ff", border: "1px solid rgba(99, 102, 241, 0.3)" },
+    });
+  };
+
+  const handleHostCamOff = (targetSocketId) => {
+    socket.emit("host-disable-camera", { meetingCode, targetSocketId });
+    toast.success("Participant camera disabled.", {
+      icon: "📷",
+      style: { background: "#1e1b4b", color: "#e0e7ff", border: "1px solid rgba(99, 102, 241, 0.3)" },
+    });
+  };
+
+  const handleHostKick = (targetSocketId, fullName) => {
+    if (!window.confirm(`Remove ${fullName} from the meeting?`)) return;
+    socket.emit("host-kick-participant", { meetingCode, targetSocketId });
+    toast.success(`${fullName} has been removed.`, {
+      icon: "🚫",
+      style: { background: "#450a0a", color: "#fecaca", border: "1px solid rgba(239, 68, 68, 0.4)" },
+    });
+  };
+
+  // ─── Lobby control actions ──────────────────────────────────────────
+  const handleToggleLobby = () => {
+    const newValue = !lobbyEnabled;
+    socket.emit("toggle-lobby", { meetingCode, enabled: newValue });
+    setLobbyEnabled(newValue);
+    toast.success(newValue ? "Lobby enabled — new participants must be approved." : "Lobby disabled — anyone can join directly.", {
+      icon: newValue ? "🛡️" : "🔓",
+      style: { background: "#1e1b4b", color: "#e0e7ff", border: "1px solid rgba(99, 102, 241, 0.3)" },
+    });
+  };
+
+  const handleAdmitUser = (targetSocketId) => {
+    socket.emit("admit-participant", { meetingCode, targetSocketId });
+  };
+
+  const handleDenyUser = (targetSocketId) => {
+    socket.emit("deny-participant", { meetingCode, targetSocketId });
   };
 
   // ─── Screen sharing ────────────────────────────────────────────────
@@ -802,7 +988,57 @@ const MeetingRoomPage = () => {
   };
 
   return (
-    <div className="flex flex-col h-[100dvh] text-white bg-slate-950 overflow-hidden">
+    <div className="flex flex-col h-[100dvh] text-white bg-slate-950 overflow-hidden relative">
+
+      {/* ═══════════════════════════════════════════════════════════════
+          LOBBY WAITING OVERLAY — shown when user is waiting for host
+          ═══════════════════════════════════════════════════════════════ */}
+      {inLobby && (
+        <div className="absolute inset-0 z-50 bg-slate-950 flex flex-col items-center justify-center gap-6 p-4">
+          {/* Camera preview while waiting */}
+          <div className="relative w-64 h-48 sm:w-80 sm:h-60 rounded-2xl overflow-hidden border-2 border-indigo-500/40 shadow-2xl shadow-indigo-950/50">
+            <video
+              ref={localVideoRef}
+              autoPlay
+              playsInline
+              muted
+              className="w-full h-full object-cover transform -scale-x-100"
+            />
+            <div className="absolute bottom-2 left-2 bg-slate-950/80 px-2.5 py-1 rounded-md text-[11px] text-indigo-300 font-semibold border border-slate-800">
+              {authUser?.fullName || "You"}
+            </div>
+          </div>
+
+          {/* Waiting message */}
+          <div className="flex flex-col items-center gap-3 text-center">
+            <div className="flex items-center gap-2">
+              <span className="relative flex h-3 w-3">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-indigo-500"></span>
+              </span>
+              <h2 className="text-lg sm:text-xl font-bold text-white">Waiting for the host to let you in</h2>
+            </div>
+            <p className="text-sm text-slate-400 max-w-sm">
+              The meeting host has been notified. You'll join automatically when admitted.
+            </p>
+
+            {/* Animated dots */}
+            <div className="flex gap-1.5 mt-2">
+              <div className="w-2 h-2 rounded-full bg-indigo-500 animate-bounce" style={{ animationDelay: '0ms' }}></div>
+              <div className="w-2 h-2 rounded-full bg-indigo-500 animate-bounce" style={{ animationDelay: '150ms' }}></div>
+              <div className="w-2 h-2 rounded-full bg-indigo-500 animate-bounce" style={{ animationDelay: '300ms' }}></div>
+            </div>
+          </div>
+
+          {/* Leave lobby button */}
+          <button
+            onClick={handleLeaveMeeting}
+            className="mt-4 px-6 py-2.5 text-sm font-medium text-white bg-red-600 hover:bg-red-700 active:bg-red-800 rounded-xl transition-colors shadow-lg"
+          >
+            Leave
+          </button>
+        </div>
+      )}
       {/* Header */}
       <header className="flex items-center justify-between px-3 py-2 sm:px-4 sm:py-3 border-b border-slate-800 bg-slate-900/40 flex-shrink-0">
         <div className="flex items-center gap-3">
@@ -1193,6 +1429,70 @@ const MeetingRoomPage = () => {
               </span>
             </h2>
 
+            {/* ── Host Lobby Toggle & Queue ── */}
+            {isHost && (
+              <div className="mb-3 space-y-2 flex-shrink-0">
+                {/* Toggle switch */}
+                <div className="flex items-center justify-between p-2 sm:p-2.5 rounded-xl bg-slate-900/80 border border-slate-800">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <ShieldCheck className={`w-4 h-4 flex-shrink-0 ${lobbyEnabled ? 'text-amber-400' : 'text-slate-500'}`} />
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-semibold text-slate-300">Waiting Room</p>
+                      <p className="text-[9px] text-slate-500">{lobbyEnabled ? 'Approve new joiners' : 'Anyone can join'}</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleToggleLobby}
+                    className={`relative flex-shrink-0 w-9 h-5 rounded-full transition-colors duration-300 cursor-pointer ${
+                      lobbyEnabled ? 'bg-amber-500' : 'bg-slate-700'
+                    }`}
+                  >
+                    <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform duration-300 ${
+                      lobbyEnabled ? 'translate-x-4' : 'translate-x-0'
+                    }`} />
+                  </button>
+                </div>
+
+                {/* Lobby queue (only shown when lobby is on and there are waiting users) */}
+                {lobbyEnabled && lobbyQueue.length > 0 && (
+                  <div className="rounded-xl border border-amber-500/30 bg-amber-950/20 overflow-hidden">
+                    <div className="flex items-center justify-between px-2.5 py-1.5 border-b border-amber-500/20 bg-amber-950/30">
+                      <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider">Waiting to join</span>
+                      <span className="bg-amber-500/20 text-amber-400 text-[10px] font-bold px-1.5 py-0.5 rounded">{lobbyQueue.length}</span>
+                    </div>
+                    <div className="divide-y divide-amber-500/10 max-h-32 overflow-y-auto scroll-smooth [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:bg-amber-800/40 [&::-webkit-scrollbar-thumb]:rounded-full">
+                      {lobbyQueue.map((user) => (
+                        <div key={user.socketId} className="flex items-center justify-between p-2 hover:bg-amber-950/30 transition-colors">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <div className="flex items-center justify-center flex-shrink-0 w-6 h-6 text-[10px] font-bold uppercase rounded-full bg-amber-600/30 border border-amber-500/50 text-amber-400">
+                              {user.fullName?.charAt(0) || "?"}
+                            </div>
+                            <span className="text-xs font-medium text-slate-200 truncate">{user.fullName}</span>
+                          </div>
+                          <div className="flex items-center gap-1 flex-shrink-0 ml-2">
+                            <button
+                              onClick={() => handleAdmitUser(user.socketId)}
+                              title="Admit"
+                              className="p-1 rounded-md bg-emerald-600/20 hover:bg-emerald-600/40 border border-emerald-500/40 hover:border-emerald-500/60 text-emerald-400 hover:text-emerald-300 transition-all cursor-pointer"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleDenyUser(user.socketId)}
+                              title="Deny"
+                              className="p-1 rounded-md bg-red-600/20 hover:bg-red-600/40 border border-red-500/40 hover:border-red-500/60 text-red-400 hover:text-red-300 transition-all cursor-pointer"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="flex-1 pr-1 space-y-2 overflow-y-auto scroll-smooth [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-slate-800 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-indigo-500/50">
               {/* Current user pinned */}
               {currentUserItem && (
@@ -1201,7 +1501,7 @@ const MeetingRoomPage = () => {
                   className="flex items-center justify-between p-2 sm:p-2.5 border border-indigo-500/30 shadow-md rounded-xl bg-slate-950/80 shadow-indigo-950/20"
                 >
                   <div className="flex items-center flex-1 min-w-0 gap-2 sm:gap-3">
-                    <div className="flex items-center justify-center flex-shrink-0 text-[10px] sm:text-xs font-bold text-indigo-400 uppercase border rounded-full w-6 h-6 sm:w-7 sm:h-7 bg-indigo-600/30 border-indigo-500/50">
+                    <div className={`flex items-center justify-center flex-shrink-0 text-[10px] sm:text-xs font-bold uppercase border rounded-full w-6 h-6 sm:w-7 sm:h-7 ${isHost ? 'bg-amber-600/30 border-amber-500/50 text-amber-400' : 'bg-indigo-600/30 border-indigo-500/50 text-indigo-400'}`}>
                       {currentUserItem.fullName?.charAt(0) || "?"}
                     </div>
                     <div className="flex-1 min-w-0">
@@ -1212,6 +1512,12 @@ const MeetingRoomPage = () => {
                         <span className="text-[10px] text-indigo-400 font-normal flex-shrink-0">
                           (You)
                         </span>
+                        {isHost && (
+                          <span className="inline-flex items-center gap-0.5 bg-amber-500/15 text-amber-400 text-[9px] font-bold px-1.5 py-0.5 rounded-md border border-amber-500/30 flex-shrink-0">
+                            <Shield className="w-2.5 h-2.5" />
+                            Host
+                          </span>
+                        )}
                       </p>
                     </div>
                   </div>
@@ -1229,16 +1535,50 @@ const MeetingRoomPage = () => {
               {otherParticipants.map((participant) => (
                 <div
                   key={participant.socketId}
-                  className="flex items-center justify-between p-2 sm:p-2.5 transition-colors border rounded-xl bg-slate-900 border-slate-800/80 hover:bg-slate-900/60"
+                  className="flex items-center justify-between p-2 sm:p-2.5 transition-colors border rounded-xl bg-slate-900 border-slate-800/80 hover:bg-slate-900/60 group/participant"
                 >
                   <div className="flex items-center flex-1 min-w-0 gap-2 sm:gap-3">
-                    <div className="flex items-center justify-center flex-shrink-0 text-[10px] sm:text-xs font-bold uppercase border rounded-full w-6 h-6 sm:w-7 sm:h-7 bg-slate-800 border-slate-700 text-slate-300">
+                    <div className={`flex items-center justify-center flex-shrink-0 text-[10px] sm:text-xs font-bold uppercase border rounded-full w-6 h-6 sm:w-7 sm:h-7 ${participant.isHost ? 'bg-amber-600/30 border-amber-500/50 text-amber-400' : 'bg-slate-800 border-slate-700 text-slate-300'}`}>
                       {participant.fullName?.charAt(0) || "?"}
                     </div>
-                    <span className="text-xs font-medium truncate text-slate-200">
-                      {participant.fullName}
-                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-slate-200 truncate flex items-center gap-1.5">
+                        <span className="truncate">{participant.fullName}</span>
+                        {participant.isHost && (
+                          <span className="inline-flex items-center gap-0.5 bg-amber-500/15 text-amber-400 text-[9px] font-bold px-1.5 py-0.5 rounded-md border border-amber-500/30 flex-shrink-0">
+                            <Shield className="w-2.5 h-2.5" />
+                            Host
+                          </span>
+                        )}
+                      </p>
+                    </div>
                   </div>
+                  {/* Host control buttons — only visible to the host, never on themselves */}
+                  {isHost && !participant.isHost && (
+                    <div className="flex items-center gap-1 flex-shrink-0 ml-2 opacity-0 group-hover/participant:opacity-100 transition-opacity duration-200">
+                      <button
+                        onClick={() => handleHostMute(participant.socketId)}
+                        title="Mute participant"
+                        className="p-1 rounded-md bg-slate-800 hover:bg-indigo-600/40 border border-slate-700 hover:border-indigo-500/50 text-slate-400 hover:text-indigo-300 transition-all cursor-pointer"
+                      >
+                        <MicOff className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={() => handleHostCamOff(participant.socketId)}
+                        title="Turn off camera"
+                        className="p-1 rounded-md bg-slate-800 hover:bg-indigo-600/40 border border-slate-700 hover:border-indigo-500/50 text-slate-400 hover:text-indigo-300 transition-all cursor-pointer"
+                      >
+                        <VideoOff className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={() => handleHostKick(participant.socketId, participant.fullName)}
+                        title="Remove from meeting"
+                        className="p-1 rounded-md bg-slate-800 hover:bg-red-600/40 border border-slate-700 hover:border-red-500/50 text-slate-400 hover:text-red-400 transition-all cursor-pointer"
+                      >
+                        <UserX className="w-3 h-3" />
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
 
