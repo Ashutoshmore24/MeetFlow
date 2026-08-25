@@ -1,5 +1,5 @@
 import { Server } from "socket.io";
-import { meetingParticipants, userSocketMap } from "./roomManager.js";
+import { meetingParticipants, userSocketMap, meetingHosts, lobbyEnabled, lobbyQueue } from "./roomManager.js";
 import ENV from "../lib/env.js";
 import Meeting from "../models/Meeting.js";
 
@@ -16,49 +16,146 @@ export const initializeSocket = (server) => {
   io.on("connection", (socket) => {
     console.log(`User Connected: ${socket.id}`);
 
-    // JOIN ROOM
-    socket.on("join-room", (data) => {
-      const { meetingCode, userId, fullName } = data;
-      
-      // Fallback validation to prevent server crashes on malformed client data
-      if (!meetingCode || !userId) return; 
+    // ─── Helper: resolve host for a meeting code (DB lookup, cached) ──
+    const resolveHost = async (meetingCode) => {
+      if (!meetingHosts[meetingCode]) {
+        try {
+          const meeting = await Meeting.findOne({ meetingCode }).select("host").lean();
+          if (meeting?.host) {
+            meetingHosts[meetingCode] = meeting.host.toString();
+          }
+        } catch (err) {
+          console.error(`Error looking up host for ${meetingCode}:`, err);
+        }
+      }
+      return meetingHosts[meetingCode];
+    };
 
-      socket.join(meetingCode);
+    // ─── Helper: fully admit a user into the meeting room ────────────
+    const admitUser = (meetingCode, userId, fullName, userSocketId, userIsHost) => {
+      const targetSocket = io.sockets.sockets.get(userSocketId);
+      if (!targetSocket) return;
+
+      targetSocket.join(meetingCode);
 
       if (!meetingParticipants[meetingCode]) {
         meetingParticipants[meetingCode] = [];
       }
 
-      // Remove any stale entry for this socket (e.g. from a reconnect)
+      // Remove stale entry
       meetingParticipants[meetingCode] = meetingParticipants[meetingCode].filter(
-        (user) => user.socketId !== socket.id
+        (user) => user.socketId !== userSocketId
       );
 
       meetingParticipants[meetingCode].push({
         userId,
         fullName,
-        socketId: socket.id,
+        socketId: userSocketId,
+        isHost: userIsHost,
       });
 
-      socket.broadcast.to(meetingCode).emit("user-joined-alert", { fullName });
-      userSocketMap[socket.id] = { meetingCode, userId, fullName };
+      userSocketMap[userSocketId] = { meetingCode, userId, fullName };
 
-      // Send roster update to ALL users (for participant list display only)
+      // Notify everyone about the new participant
+      targetSocket.broadcast.to(meetingCode).emit("user-joined-alert", { fullName });
+
       io.to(meetingCode).emit(
         "participants-updated",
         meetingParticipants[meetingCode]
       );
 
-      // Tell EXISTING users to initiate WebRTC offers to the new joiner
-      // Only existing users should create offers to prevent dual-offer glare
-      socket.broadcast.to(meetingCode).emit("new-peer-joined", {
-        socketId: socket.id,
+      // Tell existing users to create WebRTC offers to the new joiner
+      targetSocket.broadcast.to(meetingCode).emit("new-peer-joined", {
+        socketId: userSocketId,
         userId,
         fullName,
       });
+
+      console.log(`User ${fullName} admitted to ${meetingCode}${userIsHost ? ' (host)' : ''}`);
+    };
+
+    // ─── Helper: get host socket id ──────────────────────────────────
+    const getHostSocketId = (meetingCode) => {
+      const hostUserId = meetingHosts[meetingCode];
+      if (!hostUserId) return null;
+      const hostEntry = meetingParticipants[meetingCode]?.find(
+        (u) => u.userId === hostUserId
+      );
+      return hostEntry?.socketId || null;
+    };
+
+    // ─── Helper: check if the requesting socket belongs to the host ──
+    const isHostSocket = (meetingCode) => {
+      const hostUserId = meetingHosts[meetingCode];
+      if (!hostUserId) return false;
+      const userData = userSocketMap[socket.id];
+      return userData && userData.userId === hostUserId;
+    };
+
+    // ═══════════════════════════════════════════════════════════════════
+    // JOIN ROOM
+    // ═══════════════════════════════════════════════════════════════════
+    socket.on("join-room", async (data) => {
+      const { meetingCode, userId, fullName } = data;
       
-      console.log(`User ${fullName} joined ${meetingCode}`);
+      // Fallback validation to prevent server crashes on malformed client data
+      if (!meetingCode || !userId) return; 
+
+      const hostUserId = await resolveHost(meetingCode);
+      const userIsHost = hostUserId === userId;
+
+      // If user is the host → always admit directly
+      if (userIsHost) {
+        admitUser(meetingCode, userId, fullName, socket.id, true);
+
+        // Send current lobby state to the host
+        socket.emit("lobby-status-changed", {
+          enabled: !!lobbyEnabled[meetingCode],
+        });
+        socket.emit("lobby-queue-updated", lobbyQueue[meetingCode] || []);
+        return;
+      }
+
+      // If lobby is enabled → put non-host users in the waiting queue
+      if (lobbyEnabled[meetingCode]) {
+        if (!lobbyQueue[meetingCode]) {
+          lobbyQueue[meetingCode] = [];
+        }
+
+        // Remove any stale entry for this socket
+        lobbyQueue[meetingCode] = lobbyQueue[meetingCode].filter(
+          (u) => u.socketId !== socket.id
+        );
+
+        lobbyQueue[meetingCode].push({
+          userId,
+          fullName,
+          socketId: socket.id,
+        });
+
+        // Track the user so disconnect cleanup can find them
+        userSocketMap[socket.id] = { meetingCode, userId, fullName, inLobby: true };
+
+        // Tell the user they're in the lobby
+        socket.emit("waiting-in-lobby");
+
+        // Notify the host about the updated queue
+        const hostSocketId = getHostSocketId(meetingCode);
+        if (hostSocketId) {
+          io.to(hostSocketId).emit("lobby-queue-updated", lobbyQueue[meetingCode]);
+        }
+
+        console.log(`User ${fullName} placed in lobby for ${meetingCode}`);
+        return;
+      }
+
+      // Lobby is off → admit directly
+      admitUser(meetingCode, userId, fullName, socket.id, false);
     });
+
+    // ═══════════════════════════════════════════════════════════════════
+    // LEAVE ROOM & DISCONNECT HELPERS
+    // ═══════════════════════════════════════════════════════════════════
 
     // Helper function to deduplicate structural cleanup logic
     const handleUserRemoval = async (meetingCode) => {
@@ -87,6 +184,9 @@ export const initializeSocket = (server) => {
       // Clean up memory if the room becomes empty
       if (meetingParticipants[meetingCode].length === 0) {
         delete meetingParticipants[meetingCode];
+        delete meetingHosts[meetingCode];
+        delete lobbyEnabled[meetingCode];
+        delete lobbyQueue[meetingCode];
 
         // Auto-end the meeting in the database so it appears in history
         try {
@@ -106,9 +206,33 @@ export const initializeSocket = (server) => {
       }
     };
 
+    // Helper: remove a user from the lobby queue (e.g. on disconnect)
+    const handleLobbyRemoval = (meetingCode) => {
+      if (!lobbyQueue[meetingCode]) return;
+
+      lobbyQueue[meetingCode] = lobbyQueue[meetingCode].filter(
+        (u) => u.socketId !== socket.id
+      );
+
+      if (lobbyQueue[meetingCode].length === 0) {
+        delete lobbyQueue[meetingCode];
+      }
+
+      // Notify the host about the updated queue
+      const hostSocketId = getHostSocketId(meetingCode);
+      if (hostSocketId) {
+        io.to(hostSocketId).emit("lobby-queue-updated", lobbyQueue[meetingCode] || []);
+      }
+    };
+
     // LEAVE ROOM
     socket.on("leave-room", async ({ meetingCode, userId }) => {
-      await handleUserRemoval(meetingCode);
+      const userData = userSocketMap[socket.id];
+      if (userData?.inLobby) {
+        handleLobbyRemoval(meetingCode);
+      } else {
+        await handleUserRemoval(meetingCode);
+      }
       delete userSocketMap[socket.id];
       socket.leave(meetingCode);
       console.log(`User ${userId} manually left room ${meetingCode}`);
@@ -122,12 +246,163 @@ export const initializeSocket = (server) => {
         userId,
         fullName,
         message,
-        timestamp: new Date().toISOString(), // Safe ISO string format for frontend JSON parsing
+        timestamp: new Date().toISOString(),
       });
     });
 
-    
+    // ═══════════════════════════════════════════════════════════════════
+    // LOBBY CONTROL EVENTS
+    // ═══════════════════════════════════════════════════════════════════
+
+    // Host toggles lobby mode on/off
+    socket.on("toggle-lobby", ({ meetingCode, enabled }) => {
+      if (!isHostSocket(meetingCode)) return;
+
+      lobbyEnabled[meetingCode] = !!enabled;
+
+      // Notify all participants in the room about the change
+      io.to(meetingCode).emit("lobby-status-changed", {
+        enabled: !!enabled,
+      });
+
+      console.log(`Lobby ${enabled ? 'enabled' : 'disabled'} for ${meetingCode}`);
+    });
+
+    // Host admits a participant from the lobby
+    socket.on("admit-participant", ({ meetingCode, targetSocketId }) => {
+      if (!isHostSocket(meetingCode)) return;
+
+      if (!lobbyQueue[meetingCode]) return;
+
+      const queuedUser = lobbyQueue[meetingCode].find(
+        (u) => u.socketId === targetSocketId
+      );
+      if (!queuedUser) return;
+
+      // Remove from lobby queue
+      lobbyQueue[meetingCode] = lobbyQueue[meetingCode].filter(
+        (u) => u.socketId !== targetSocketId
+      );
+      if (lobbyQueue[meetingCode].length === 0) {
+        delete lobbyQueue[meetingCode];
+      }
+
+      // Clear the inLobby flag
+      if (userSocketMap[targetSocketId]) {
+        delete userSocketMap[targetSocketId].inLobby;
+      }
+
+      // Tell the user they've been admitted
+      io.to(targetSocketId).emit("admitted-from-lobby");
+
+      // Now fully admit them into the meeting
+      admitUser(meetingCode, queuedUser.userId, queuedUser.fullName, targetSocketId, false);
+
+      // Update the host with the new queue
+      const hostSocketId = getHostSocketId(meetingCode);
+      if (hostSocketId) {
+        io.to(hostSocketId).emit("lobby-queue-updated", lobbyQueue[meetingCode] || []);
+      }
+
+      console.log(`Host admitted ${queuedUser.fullName} from lobby in ${meetingCode}`);
+    });
+
+    // Host denies a participant from the lobby
+    socket.on("deny-participant", ({ meetingCode, targetSocketId }) => {
+      if (!isHostSocket(meetingCode)) return;
+
+      if (!lobbyQueue[meetingCode]) return;
+
+      const queuedUser = lobbyQueue[meetingCode].find(
+        (u) => u.socketId === targetSocketId
+      );
+      if (!queuedUser) return;
+
+      // Remove from lobby queue
+      lobbyQueue[meetingCode] = lobbyQueue[meetingCode].filter(
+        (u) => u.socketId !== targetSocketId
+      );
+      if (lobbyQueue[meetingCode].length === 0) {
+        delete lobbyQueue[meetingCode];
+      }
+
+      // Clean up
+      delete userSocketMap[targetSocketId];
+
+      // Tell the user they've been denied
+      io.to(targetSocketId).emit("denied-from-lobby");
+
+      // Update the host with the new queue
+      const hostSocketId = getHostSocketId(meetingCode);
+      if (hostSocketId) {
+        io.to(hostSocketId).emit("lobby-queue-updated", lobbyQueue[meetingCode] || []);
+      }
+
+      console.log(`Host denied ${queuedUser.fullName} from lobby in ${meetingCode}`);
+    });
+
+    // ═══════════════════════════════════════════════════════════════════
+    // HOST CONTROL EVENTS
+    // ═══════════════════════════════════════════════════════════════════
+
+    // Host mutes a participant's microphone
+    socket.on("host-mute-participant", ({ meetingCode, targetSocketId }) => {
+      if (!isHostSocket(meetingCode)) return;
+      io.to(targetSocketId).emit("force-mute");
+      console.log(`Host muted participant ${targetSocketId} in ${meetingCode}`);
+    });
+
+    // Host disables a participant's camera
+    socket.on("host-disable-camera", ({ meetingCode, targetSocketId }) => {
+      if (!isHostSocket(meetingCode)) return;
+      io.to(targetSocketId).emit("force-camera-off");
+      console.log(`Host disabled camera of ${targetSocketId} in ${meetingCode}`);
+    });
+
+    // Host kicks a participant from the meeting
+    socket.on("host-kick-participant", async ({ meetingCode, targetSocketId }) => {
+      if (!isHostSocket(meetingCode)) return;
+
+      const targetSocket = io.sockets.sockets.get(targetSocketId);
+      if (!targetSocket) return;
+
+      // Find the kicked user's info before removing
+      const kickedUser = meetingParticipants[meetingCode]?.find(
+        (u) => u.socketId === targetSocketId
+      );
+
+      // Tell the target they've been kicked
+      io.to(targetSocketId).emit("you-were-kicked");
+
+      // Remove from room data
+      if (meetingParticipants[meetingCode]) {
+        meetingParticipants[meetingCode] = meetingParticipants[meetingCode].filter(
+          (u) => u.socketId !== targetSocketId
+        );
+      }
+      delete userSocketMap[targetSocketId];
+
+      // Notify remaining peers
+      if (kickedUser) {
+        socket.broadcast.to(meetingCode).emit("user-left-alert", {
+          fullName: kickedUser.fullName,
+        });
+      }
+      io.to(meetingCode).emit("peer-left", { socketId: targetSocketId });
+      io.to(meetingCode).emit(
+        "participants-updated",
+        meetingParticipants[meetingCode] || []
+      );
+
+      // Force the target socket to leave the room
+      targetSocket.leave(meetingCode);
+
+      console.log(`Host kicked ${targetSocketId} from ${meetingCode}`);
+    });
+
+    // ═══════════════════════════════════════════════════════════════════
     // WEBRTC SIGNALING RELAY EVENTS
+    // ═══════════════════════════════════════════════════════════════════
    
     // 1. Relay connection offer from a new user to a specific existing user
     socket.on("webrtc-offer", ({ targetSocketId, offer }) => {
@@ -153,11 +428,18 @@ export const initializeSocket = (server) => {
       });
     });
 
+    // ═══════════════════════════════════════════════════════════════════
     // DISCONNECT
+    // ═══════════════════════════════════════════════════════════════════
     socket.on("disconnect", async () => {
       const userData = userSocketMap[socket.id];
       if (userData) {
-        await handleUserRemoval(userData.meetingCode);
+        if (userData.inLobby) {
+          // User was in the lobby queue — remove them
+          handleLobbyRemoval(userData.meetingCode);
+        } else {
+          await handleUserRemoval(userData.meetingCode);
+        }
         delete userSocketMap[socket.id];
       }
       console.log(`User Disconnected: ${socket.id}`);
