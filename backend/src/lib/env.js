@@ -13,6 +13,7 @@ const ENV = {
     CLOUDINARY_API_SECRET: process.env.CLOUDINARY_API_SECRET,
     EMAIL_USER: process.env.EMAIL_USER,
     EMAIL_PASS: process.env.EMAIL_PASS,
+    FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID,
 }
 
 export default ENV;

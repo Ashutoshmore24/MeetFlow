@@ -32,7 +32,7 @@ export const initializeSocket = (server) => {
     };
 
     // ─── Helper: fully admit a user into the meeting room ────────────
-    const admitUser = (meetingCode, userId, fullName, userSocketId, userIsHost) => {
+    const admitUser = (meetingCode, userId, fullName, profilePic, isMuted, isCamOff, userSocketId, userIsHost) => {
       const targetSocket = io.sockets.sockets.get(userSocketId);
       if (!targetSocket) return;
 
@@ -50,6 +50,9 @@ export const initializeSocket = (server) => {
       meetingParticipants[meetingCode].push({
         userId,
         fullName,
+        profilePic,
+        isMuted: !!isMuted,
+        isCamOff: !!isCamOff,
         socketId: userSocketId,
         isHost: userIsHost,
       });
@@ -96,7 +99,7 @@ export const initializeSocket = (server) => {
     // JOIN ROOM
     // ═══════════════════════════════════════════════════════════════════
     socket.on("join-room", async (data) => {
-      const { meetingCode, userId, fullName } = data;
+      const { meetingCode, userId, fullName, profilePic, isMuted, isCamOff } = data;
       
       // Fallback validation to prevent server crashes on malformed client data
       if (!meetingCode || !userId) return; 
@@ -106,7 +109,7 @@ export const initializeSocket = (server) => {
 
       // If user is the host → always admit directly
       if (userIsHost) {
-        admitUser(meetingCode, userId, fullName, socket.id, true);
+        admitUser(meetingCode, userId, fullName, profilePic, isMuted, isCamOff, socket.id, true);
 
         // Send current lobby state to the host
         socket.emit("lobby-status-changed", {
@@ -130,6 +133,9 @@ export const initializeSocket = (server) => {
         lobbyQueue[meetingCode].push({
           userId,
           fullName,
+          profilePic,
+          isMuted: !!isMuted,
+          isCamOff: !!isCamOff,
           socketId: socket.id,
         });
 
@@ -150,7 +156,7 @@ export const initializeSocket = (server) => {
       }
 
       // Lobby is off → admit directly
-      admitUser(meetingCode, userId, fullName, socket.id, false);
+      admitUser(meetingCode, userId, fullName, profilePic, isMuted, isCamOff, socket.id, false);
     });
 
     // ═══════════════════════════════════════════════════════════════════
@@ -296,7 +302,7 @@ export const initializeSocket = (server) => {
       io.to(targetSocketId).emit("admitted-from-lobby");
 
       // Now fully admit them into the meeting
-      admitUser(meetingCode, queuedUser.userId, queuedUser.fullName, targetSocketId, false);
+      admitUser(meetingCode, queuedUser.userId, queuedUser.fullName, queuedUser.profilePic, queuedUser.isMuted, queuedUser.isCamOff, targetSocketId, false);
 
       // Update the host with the new queue
       const hostSocketId = getHostSocketId(meetingCode);
@@ -398,6 +404,33 @@ export const initializeSocket = (server) => {
       targetSocket.leave(meetingCode);
 
       console.log(`Host kicked ${targetSocketId} from ${meetingCode}`);
+    });
+
+    // ═══════════════════════════════════════════════════════════════════
+    // MEDIA STATUS EVENTS
+    // ═══════════════════════════════════════════════════════════════════
+    
+    // User updates their own media status
+    socket.on("media-status-change", ({ meetingCode, isMuted, isCamOff }) => {
+      if (!meetingParticipants[meetingCode]) return;
+      
+      const userIndex = meetingParticipants[meetingCode].findIndex(
+        (u) => u.socketId === socket.id
+      );
+
+      if (userIndex !== -1) {
+        if (isMuted !== undefined) {
+          meetingParticipants[meetingCode][userIndex].isMuted = isMuted;
+        }
+        if (isCamOff !== undefined) {
+          meetingParticipants[meetingCode][userIndex].isCamOff = isCamOff;
+        }
+        
+        io.to(meetingCode).emit(
+          "participants-updated",
+          meetingParticipants[meetingCode]
+        );
+      }
     });
 
     // ═══════════════════════════════════════════════════════════════════

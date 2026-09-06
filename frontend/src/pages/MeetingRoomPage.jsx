@@ -394,6 +394,9 @@ const MeetingRoomPage = () => {
       meetingCode,
       userId: authUser._id,
       fullName: authUser.fullName,
+      profilePic: authUser.profilePic,
+      isMuted,
+      isCamOff,
     });
 
     // ── Participants updated (ROSTER ONLY — no offer creation) ─────
@@ -549,6 +552,7 @@ const MeetingRoomPage = () => {
         if (audioTrack) {
           audioTrack.enabled = false;
           setIsMuted(true);
+          socket.emit("media-status-change", { meetingCode, isMuted: true });
         }
       }
       toast.error("The host has muted your microphone.", {
@@ -568,6 +572,7 @@ const MeetingRoomPage = () => {
         if (videoTrack) {
           videoTrack.enabled = false;
           setIsCamOff(true);
+          socket.emit("media-status-change", { meetingCode, isCamOff: true });
         }
       }
       toast.error("The host has turned off your camera.", {
@@ -697,6 +702,28 @@ const MeetingRoomPage = () => {
     navigate,
   ]);
 
+  // ─── Active Speaker Toast Notification ───────────────────────────
+  useEffect(() => {
+    // Notify when a remote user starts speaking
+    Object.entries(activeSpeakers).forEach(([id, isSpeaking]) => {
+      if (id !== 'local' && isSpeaking) {
+        const participant = participants.find(p => p.socketId === id);
+        if (participant) {
+          toast(`${participant.fullName} is speaking...`, {
+            id: `speaking-${id}`, // use id to prevent duplicates/spam
+            icon: "🗣️",
+            duration: 3000,
+            style: {
+              background: "#1e1b4b",
+              color: "#e0e7ff",
+              border: "1px solid rgba(99, 102, 241, 0.4)",
+            },
+          });
+        }
+      }
+    });
+  }, [activeSpeakers, participants]);
+
   // ─── 3. Auto-scroll chat ─────────────────────────────────────────
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -770,7 +797,7 @@ const MeetingRoomPage = () => {
     }
     socket.emit("leave-room", {
       meetingCode,
-      userId: authUser._id,
+      userId: authUser?._id,
     });
     socket.disconnect();
     toast.success("You have left the meeting.");
@@ -796,7 +823,9 @@ const MeetingRoomPage = () => {
       const audioTrack = stream.getAudioTracks()[0];
       if (audioTrack) {
         audioTrack.enabled = !audioTrack.enabled;
-        setIsMuted(!audioTrack.enabled);
+        const newMutedState = !audioTrack.enabled;
+        setIsMuted(newMutedState);
+        socket.emit("media-status-change", { meetingCode, isMuted: newMutedState });
       } else {
         toast.error("No microphone track available.");
       }
@@ -809,7 +838,9 @@ const MeetingRoomPage = () => {
       const videoTrack = stream.getVideoTracks()[0];
       if (videoTrack) {
         videoTrack.enabled = !videoTrack.enabled;
-        setIsCamOff(!videoTrack.enabled);
+        const newCamState = !videoTrack.enabled;
+        setIsCamOff(newCamState);
+        socket.emit("media-status-change", { meetingCode, isCamOff: newCamState });
       } else {
         toast.error("No camera track available.");
       }
@@ -1094,23 +1125,35 @@ const MeetingRoomPage = () => {
                       isScreenSharing
                         ? "border-emerald-500/60 ring-1 ring-emerald-500/30"
                         : activeSpeakers['local']
-                          ? "border-emerald-400 ring-2 ring-emerald-400/40 shadow-emerald-500/20 shadow-xl"
-                          : "border-indigo-500/50 ring-1 ring-indigo-500/20"
+                          ? "border-indigo-400 ring-2 ring-indigo-400/50 shadow-indigo-500/20 shadow-xl"
+                          : "border-slate-800"
                     }`}
                   >
+                    {isCamOff && (
+                      <div className="absolute inset-0 z-10 flex flex-col items-center justify-center w-full h-full bg-slate-800 rounded-lg sm:rounded-xl">
+                        {authUser?.profilePic ? (
+                          <img src={authUser.profilePic} alt="Profile" className="w-24 h-24 sm:w-32 sm:h-32 rounded-full object-cover border-4 border-slate-700 shadow-xl" />
+                        ) : (
+                          <div className="flex items-center justify-center w-24 h-24 sm:w-32 sm:h-32 rounded-full bg-indigo-600/30 border-4 border-indigo-500/50 text-indigo-300 text-3xl sm:text-4xl font-bold uppercase shadow-xl">
+                            {authUser?.fullName?.charAt(0) || "?"}
+                          </div>
+                        )}
+                      </div>
+                    )}
                     <video
                       ref={localVideoRef}
                       autoPlay
                       playsInline
                       muted
-                      className={`w-full h-full rounded-lg sm:rounded-xl ${isScreenSharing ? "object-contain" : "object-cover transform -scale-x-100"}`}
+                      className={`w-full h-full rounded-lg sm:rounded-xl ${isScreenSharing ? "object-contain" : "object-cover transform -scale-x-100"} ${isCamOff ? "opacity-0" : "opacity-100"}`}
                     />
-                    <div className={`absolute bottom-2 left-2 sm:bottom-3 sm:left-3 px-2.5 py-1 text-[11px] sm:text-xs rounded-md font-semibold border transition-all duration-300 ${
+                    <div className={`absolute bottom-2 left-2 sm:bottom-3 sm:left-3 px-2.5 py-1 text-[11px] sm:text-xs rounded-md font-semibold border transition-all duration-300 flex items-center gap-1.5 ${
                       activeSpeakers['local']
-                        ? "bg-emerald-950/80 text-emerald-300 border-emerald-700/60"
+                        ? "bg-indigo-950/80 text-indigo-300 border-indigo-700/60"
                         : "bg-slate-950/80 text-indigo-300 border-slate-800"
                     }`}>
-                      You {isMuted && "🎙️"} {isScreenSharing && "🖥️"}
+                      {isMuted && <MicOff className="w-3.5 h-3.5 text-red-400" />}
+                      <span>You {isScreenSharing && "🖥️"}</span>
                     </div>
                     {/* Speaking indicator */}
                     {activeSpeakers['local'] && !isScreenSharing && (
@@ -1142,10 +1185,21 @@ const MeetingRoomPage = () => {
                       <div
                         className={`relative w-full h-full border-2 shadow-lg bg-slate-900 rounded-lg sm:rounded-xl transition-all duration-300 ${
                           isSpeaking
-                            ? "border-emerald-400 ring-2 ring-emerald-400/40 shadow-emerald-500/20 shadow-xl"
-                            : "border-indigo-500/50 ring-1 ring-indigo-500/20"
+                            ? "border-indigo-400 ring-2 ring-indigo-400/50 shadow-indigo-500/20 shadow-xl"
+                            : "border-slate-800"
                         }`}
                       >
+                        {pinnedParticipant.isCamOff && (
+                          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center w-full h-full bg-slate-800 rounded-lg sm:rounded-xl">
+                            {pinnedParticipant.profilePic ? (
+                              <img src={pinnedParticipant.profilePic} alt="Profile" className="w-24 h-24 sm:w-32 sm:h-32 rounded-full object-cover border-4 border-slate-700 shadow-xl" />
+                            ) : (
+                              <div className="flex items-center justify-center w-24 h-24 sm:w-32 sm:h-32 rounded-full bg-indigo-600/30 border-4 border-indigo-500/50 text-indigo-300 text-3xl sm:text-4xl font-bold uppercase shadow-xl">
+                                {pinnedParticipant.fullName?.charAt(0) || "?"}
+                              </div>
+                            )}
+                          </div>
+                        )}
                         <video
                           ref={(el) => {
                             remoteVideoRefs.current[pinnedParticipant.socketId] = el;
@@ -1157,14 +1211,15 @@ const MeetingRoomPage = () => {
                           }}
                           autoPlay
                           playsInline
-                          className="object-cover w-full h-full rounded-lg sm:rounded-xl"
+                          className={`object-cover w-full h-full rounded-lg sm:rounded-xl ${pinnedParticipant.isCamOff ? "opacity-0" : "opacity-100"}`}
                         />
-                        <div className={`absolute bottom-2 left-2 sm:bottom-3 sm:left-3 px-2.5 py-1 text-[11px] sm:text-xs rounded-md font-semibold border transition-all duration-300 ${
+                        <div className={`absolute bottom-2 left-2 sm:bottom-3 sm:left-3 px-2.5 py-1 text-[11px] sm:text-xs rounded-md font-semibold border transition-all duration-300 flex items-center gap-1.5 ${
                           isSpeaking
-                            ? "bg-emerald-950/80 text-emerald-300 border-emerald-700/60"
+                            ? "bg-indigo-950/80 text-indigo-300 border-indigo-700/60"
                             : "bg-slate-950/80 text-slate-300 border-slate-800"
                         }`}>
-                          {pinnedParticipant.fullName}
+                          {pinnedParticipant.isMuted && <MicOff className="w-3.5 h-3.5 text-red-400" />}
+                          <span>{pinnedParticipant.fullName}</span>
                         </div>
                         {/* Speaking indicator */}
                         {isSpeaking && (
@@ -1201,19 +1256,31 @@ const MeetingRoomPage = () => {
                       isScreenSharing
                         ? "border-emerald-500/60"
                         : activeSpeakers['local']
-                          ? "border-emerald-400 ring-1 ring-emerald-400/30"
+                          ? "border-indigo-400 ring-2 ring-indigo-400/40"
                           : "border-slate-800"
                     }`}
                   >
+                    {isCamOff && (
+                      <div className="absolute inset-0 z-10 flex items-center justify-center w-full h-full bg-slate-800 rounded-lg">
+                        {authUser?.profilePic ? (
+                          <img src={authUser.profilePic} alt="Profile" className="w-12 h-12 rounded-full object-cover border-2 border-slate-700 shadow-sm" />
+                        ) : (
+                          <div className="flex items-center justify-center w-12 h-12 rounded-full bg-indigo-600/30 border-2 border-indigo-500/50 text-indigo-300 text-lg font-bold uppercase">
+                            {authUser?.fullName?.charAt(0) || "?"}
+                          </div>
+                        )}
+                      </div>
+                    )}
                     <video
                       ref={localVideoRef}
                       autoPlay
                       playsInline
                       muted
-                      className={`w-full h-full rounded-lg ${isScreenSharing ? "object-contain" : "object-cover transform -scale-x-100"}`}
+                      className={`w-full h-full rounded-lg ${isScreenSharing ? "object-contain" : "object-cover transform -scale-x-100"} ${isCamOff ? "opacity-0" : "opacity-100"}`}
                     />
-                    <div className="absolute bottom-1 left-1 bg-slate-950/80 px-1.5 py-0.5 text-[9px] rounded text-indigo-300 font-semibold border border-slate-800">
-                      You
+                    <div className="absolute bottom-1 left-1 bg-slate-950/80 px-1.5 py-0.5 text-[9px] rounded text-indigo-300 font-semibold border border-slate-800 flex items-center gap-1">
+                      {isMuted && <MicOff className="w-2.5 h-2.5 text-red-400" />}
+                      <span>You</span>
                     </div>
                     {/* Pin overlay on hover */}
                     <div className="absolute inset-0 bg-slate-950/0 group-hover/tile:bg-slate-950/40 transition-all duration-200 rounded-lg flex items-center justify-center">
@@ -1236,10 +1303,21 @@ const MeetingRoomPage = () => {
                         onClick={() => handlePin(participant.socketId)}
                         className={`relative flex-shrink-0 w-36 sm:w-44 lg:w-52 border-2 shadow-md aspect-video bg-slate-900 rounded-lg transition-all duration-300 cursor-pointer group/tile hover:border-indigo-500/60 ${
                           isSpeaking
-                            ? "border-emerald-400 ring-1 ring-emerald-400/30"
+                            ? "border-indigo-400 ring-2 ring-indigo-400/40"
                             : "border-slate-800"
                         }`}
                       >
+                        {participant.isCamOff && (
+                          <div className="absolute inset-0 z-10 flex items-center justify-center w-full h-full bg-slate-800 rounded-lg">
+                            {participant.profilePic ? (
+                              <img src={participant.profilePic} alt="Profile" className="w-12 h-12 rounded-full object-cover border-2 border-slate-700 shadow-sm" />
+                            ) : (
+                              <div className="flex items-center justify-center w-12 h-12 rounded-full bg-indigo-600/30 border-2 border-indigo-500/50 text-indigo-300 text-lg font-bold uppercase">
+                                {participant.fullName?.charAt(0) || "?"}
+                              </div>
+                            )}
+                          </div>
+                        )}
                         <video
                           ref={(el) => {
                             remoteVideoRefs.current[participant.socketId] = el;
@@ -1251,10 +1329,11 @@ const MeetingRoomPage = () => {
                           }}
                           autoPlay
                           playsInline
-                          className="object-cover w-full h-full rounded-lg"
+                          className={`object-cover w-full h-full rounded-lg ${participant.isCamOff ? "opacity-0" : "opacity-100"}`}
                         />
-                        <div className="absolute bottom-1 left-1 bg-slate-950/80 px-1.5 py-0.5 text-[9px] rounded text-slate-300 font-medium border border-slate-800">
-                          {participant.fullName}
+                        <div className="absolute bottom-1 left-1 bg-slate-950/80 px-1.5 py-0.5 text-[9px] rounded text-slate-300 font-medium border border-slate-800 flex items-center gap-1">
+                          {participant.isMuted && <MicOff className="w-2.5 h-2.5 text-red-400" />}
+                          <span>{participant.fullName}</span>
                         </div>
                         {/* Pin overlay on hover */}
                         <div className="absolute inset-0 bg-slate-950/0 group-hover/tile:bg-slate-950/40 transition-all duration-200 rounded-lg flex items-center justify-center">
@@ -1283,23 +1362,35 @@ const MeetingRoomPage = () => {
                 isScreenSharing
                   ? "border-emerald-500/60 ring-1 ring-emerald-500/30"
                   : activeSpeakers['local']
-                    ? "border-emerald-400 ring-2 ring-emerald-400/40 shadow-emerald-500/20 shadow-xl"
+                    ? "border-indigo-400 ring-2 ring-indigo-400/50 shadow-indigo-500/20 shadow-xl"
                     : "border-slate-800 hover:border-indigo-500/40"
               }`}
             >
+              {isCamOff && (
+                <div className="absolute inset-0 z-10 flex items-center justify-center w-full h-full bg-slate-800 rounded-lg sm:rounded-xl">
+                  {authUser?.profilePic ? (
+                    <img src={authUser.profilePic} alt="Profile" className="w-16 h-16 sm:w-24 sm:h-24 rounded-full object-cover border-2 border-slate-700 shadow-lg" />
+                  ) : (
+                    <div className="flex items-center justify-center w-16 h-16 sm:w-24 sm:h-24 rounded-full bg-indigo-600/30 border-2 border-indigo-500/50 text-indigo-300 text-2xl sm:text-3xl font-bold uppercase shadow-lg">
+                      {authUser?.fullName?.charAt(0) || "?"}
+                    </div>
+                  )}
+                </div>
+              )}
               <video
                 ref={localVideoRef}
                 autoPlay
                 playsInline
                 muted
-                className={`w-full h-full rounded-lg sm:rounded-xl ${isScreenSharing ? "object-contain" : "object-cover transform -scale-x-100"}`}
+                className={`w-full h-full rounded-lg sm:rounded-xl ${isScreenSharing ? "object-contain" : "object-cover transform -scale-x-100"} ${isCamOff ? "opacity-0" : "opacity-100"}`}
               />
-              <div className={`absolute bottom-1.5 left-1.5 sm:bottom-2 sm:left-2 px-2 py-0.5 sm:px-2.5 sm:py-1 text-[10px] sm:text-xs rounded-md font-semibold border transition-all duration-300 ${
+              <div className={`absolute bottom-1.5 left-1.5 sm:bottom-2 sm:left-2 px-2 py-0.5 sm:px-2.5 sm:py-1 text-[10px] sm:text-xs rounded-md font-semibold border transition-all duration-300 flex items-center gap-1.5 ${
                 activeSpeakers['local']
-                  ? "bg-emerald-950/80 text-emerald-300 border-emerald-700/60"
+                  ? "bg-indigo-950/80 text-indigo-300 border-indigo-700/60"
                   : "bg-slate-950/80 text-indigo-300 border-slate-800"
               }`}>
-                You {isMuted && "🎙️"} {isScreenSharing && "🖥️"}
+                {isMuted && <MicOff className="w-3.5 h-3.5 text-red-400" />}
+                <span>You {isScreenSharing && "🖥️"}</span>
               </div>
               {/* Speaking indicator pulse */}
               {activeSpeakers['local'] && !isScreenSharing && (
@@ -1329,10 +1420,21 @@ const MeetingRoomPage = () => {
                   onClick={() => handlePin(participant.socketId)}
                   className={`relative w-full border-2 shadow-lg aspect-video bg-slate-900 rounded-lg sm:rounded-xl transition-all duration-300 cursor-pointer group/tile ${
                     isSpeaking
-                      ? "border-emerald-400 ring-2 ring-emerald-400/40 shadow-emerald-500/20 shadow-xl"
+                      ? "border-indigo-400 ring-2 ring-indigo-400/50 shadow-indigo-500/20 shadow-xl"
                       : "border-slate-800 hover:border-indigo-500/40"
                   }`}
                 >
+                  {participant.isCamOff && (
+                    <div className="absolute inset-0 z-10 flex items-center justify-center w-full h-full bg-slate-800 rounded-lg sm:rounded-xl">
+                      {participant.profilePic ? (
+                        <img src={participant.profilePic} alt="Profile" className="w-16 h-16 sm:w-24 sm:h-24 rounded-full object-cover border-2 border-slate-700 shadow-lg" />
+                      ) : (
+                        <div className="flex items-center justify-center w-16 h-16 sm:w-24 sm:h-24 rounded-full bg-indigo-600/30 border-2 border-indigo-500/50 text-indigo-300 text-2xl sm:text-3xl font-bold uppercase shadow-lg">
+                          {participant.fullName?.charAt(0) || "?"}
+                        </div>
+                      )}
+                    </div>
+                  )}
                   <video
                     ref={(el) => {
                       remoteVideoRefs.current[participant.socketId] = el;
@@ -1346,14 +1448,15 @@ const MeetingRoomPage = () => {
                     }}
                     autoPlay
                     playsInline
-                    className="object-cover w-full h-full rounded-lg sm:rounded-xl"
+                    className={`object-cover w-full h-full rounded-lg sm:rounded-xl ${participant.isCamOff ? "opacity-0" : "opacity-100"}`}
                   />
-                  <div className={`absolute bottom-1.5 left-1.5 sm:bottom-2 sm:left-2 px-2 py-0.5 sm:px-2.5 sm:py-1 text-[10px] sm:text-xs rounded-md font-medium border transition-all duration-300 ${
+                  <div className={`absolute bottom-1.5 left-1.5 sm:bottom-2 sm:left-2 px-2 py-0.5 sm:px-2.5 sm:py-1 text-[10px] sm:text-xs rounded-md font-medium border transition-all duration-300 flex items-center gap-1.5 ${
                     isSpeaking
-                      ? "bg-emerald-950/80 text-emerald-300 border-emerald-700/60"
+                      ? "bg-indigo-950/80 text-indigo-300 border-indigo-700/60"
                       : "bg-slate-950/80 text-slate-300 border-slate-800"
                   }`}>
-                    {participant.fullName}
+                    {participant.isMuted && <MicOff className="w-3.5 h-3.5 text-red-400" />}
+                    <span>{participant.fullName}</span>
                   </div>
                   {/* Speaking indicator pulse */}
                   {isSpeaking && (
@@ -1518,6 +1621,11 @@ const MeetingRoomPage = () => {
                             Host
                           </span>
                         )}
+                        {isMuted && (
+                          <span className="inline-flex items-center text-red-400 flex-shrink-0 ml-1" title="Muted">
+                            <MicOff className="w-3.5 h-3.5" />
+                          </span>
+                        )}
                       </p>
                     </div>
                   </div>
@@ -1548,6 +1656,11 @@ const MeetingRoomPage = () => {
                           <span className="inline-flex items-center gap-0.5 bg-amber-500/15 text-amber-400 text-[9px] font-bold px-1.5 py-0.5 rounded-md border border-amber-500/30 flex-shrink-0">
                             <Shield className="w-2.5 h-2.5" />
                             Host
+                          </span>
+                        )}
+                        {participant.isMuted && (
+                          <span className="inline-flex items-center text-red-400 flex-shrink-0 ml-1" title="Muted">
+                            <MicOff className="w-3.5 h-3.5" />
                           </span>
                         )}
                       </p>

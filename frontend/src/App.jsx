@@ -1,56 +1,57 @@
-import { Routes, Route, Navigate } from "react-router-dom"; 
-import { useEffect } from "react"; 
-import { useAuthStore } from "./store/useAuthStore"; 
-import LoginPage from "./pages/LoginPage"; 
-import SignupPage from "./pages/SignupPage"; 
-import DashboardPage from "./pages/DashboardPage"; 
-import ProtectedRoute from "./components/ProtectedRoute"; 
-import MeetingRoomPage from "./pages/MeetingRoomPage"; 
-import UpcomingPage from "./pages/UpcomingPage"; 
+import { Routes, Route, Navigate } from "react-router-dom";
+import { useEffect } from "react";
+import { useAuthStore } from "./store/useAuthStore";
+import LoginPage from "./pages/LoginPage";
+import SignupPage from "./pages/SignupPage";
+import DashboardPage from "./pages/DashboardPage";
+import ProtectedRoute from "./components/ProtectedRoute";
+import MeetingRoomPage from "./pages/MeetingRoomPage";
+import UpcomingPage from "./pages/UpcomingPage";
 import HistoryPage from "./pages/HistoryPage";
 import ProfilePage from "./pages/ProfilePage";
 import VerifyEmailPage from "./pages/VerifyEmailPage";
 import { Toaster } from "react-hot-toast";
 import { Loader } from "lucide-react";
 
-function App() { 
-  const { checkAuth, isCheckingAuth, authUser } = useAuthStore(); 
+function App() {
+  const { checkAuth, isCheckingAuth, authUser } = useAuthStore();
 
-  useEffect(() => { 
-    checkAuth(); 
-  }, [checkAuth]); 
+  useEffect(() => {
+    checkAuth();
+  }, [checkAuth]);
 
-  if (isCheckingAuth) { 
-    return ( 
-      <div className="flex items-center justify-center h-screen text-white bg-slate-950"> 
-        <Loader className="animate-spin" size={32} /> 
-      </div> 
-    ); 
-  } 
+  if (isCheckingAuth) {
+    return (
+      <div className="flex items-center justify-center h-screen text-white bg-slate-950">
+        <Loader className="animate-spin text-green-500 mr-3" size={32} />
+        <span>Loading...</span>
+      </div>
+    );
+  }
 
-  return ( 
-    <> 
-      <Toaster position="top-center" reverseOrder={false} /> 
-      
-      <Routes> 
+  return (
+    <>
+      <Toaster position="top-center" reverseOrder={false} />
+
+      <Routes>
         {/* Public Auth Routes */}
-        <Route path="/login" element={!authUser ? <LoginPage /> : <Navigate to="/" />} /> 
-        <Route path="/signup" element={!authUser ? <SignupPage /> : <Navigate to="/" />} /> 
+        <Route path="/login" element={!authUser ? <LoginPage /> : <Navigate to="/" />} />
+        <Route path="/signup" element={!authUser ? <SignupPage /> : <Navigate to="/" />} />
         <Route path="/verify-email/:token" element={<VerifyEmailPage />} />
-        
+
         {/* Protected Dashboard Route */}
-        <Route path="/" element={ 
-          <ProtectedRoute> 
-            <DashboardPage /> 
-          </ProtectedRoute> 
-        } /> 
-        
+        <Route path="/" element={
+          <ProtectedRoute>
+            <DashboardPage />
+          </ProtectedRoute>
+        } />
+
         <Route path="/history" element={
           <ProtectedRoute>
             <HistoryPage />
           </ProtectedRoute>
         } />
-        
+
         <Route path="/upcoming" element={
           <ProtectedRoute>
             <UpcomingPage />
@@ -63,17 +64,15 @@ function App() {
           </ProtectedRoute>
         } />
 
-      
-
         {/* Protected Live Meeting Route */}
-        <Route path="/meeting/:meetingCode" element={ 
-          <ProtectedRoute> 
-            <MeetingRoomPage /> 
-          </ProtectedRoute> 
-        } /> 
-      </Routes> 
-    </> 
-  ); 
-} 
+        <Route path="/meeting/:meetingCode" element={
+          <ProtectedRoute>
+            <MeetingRoomPage />
+          </ProtectedRoute>
+        } />
+      </Routes>
+    </>
+  );
+}
 
 export default App;

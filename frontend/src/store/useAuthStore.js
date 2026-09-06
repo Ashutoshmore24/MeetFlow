@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import { axiosInstance } from "../lib/axios";
 import toast from "react-hot-toast";
+import { signOut as firebaseSignOut } from "firebase/auth";
+import { auth } from "../lib/firebase";
 
 export const useAuthStore = create((set) => ({
   authUser: null,
@@ -97,6 +99,36 @@ export const useAuthStore = create((set) => ({
     }
   },
 
+  googleLogin: async (idToken) => {
+    try {
+      set({ isLoggingIn: true });
+
+      const res = await axiosInstance.post(
+        "/auth/google",
+        { idToken }
+      );
+
+      set({
+        authUser: res.data.user,
+      });
+
+      toast.success("Logged in successfully via Google.");
+      return {
+        success: true,
+      };
+    } catch (error) {
+      toast.error(error.response?.data?.message || "Google Login failed. Please try again.");
+      return {
+        success: false,
+        message: error.response?.data?.message || "Google Login failed",
+      };
+    } finally {
+      set({
+        isLoggingIn: false,
+      });
+    }
+  },
+
   logout: async () => {
     try {
       set({
@@ -105,11 +137,18 @@ export const useAuthStore = create((set) => ({
 
       await axiosInstance.post("/auth/logout");
 
+      // Sign out of Firebase as well (for Google users)
+      try {
+        await firebaseSignOut(auth);
+      } catch (e) {
+        // Ignore Firebase signout errors — user may not have signed in via Google
+      }
+
       set({
         authUser: null,
       });
         
-        toast.success("Logged out successfully.");
+      toast.success("Logged out successfully.");
     } catch (error) {
         console.error(error);
         toast.error("Logout failed. Please try again.");
