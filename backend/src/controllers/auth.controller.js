@@ -4,6 +4,8 @@ import { generateToken } from "../lib/utils.js";
 import crypto from "crypto";
 import cloudinary from "../config/cloudinary.js";
 import { sendVerificationEmail } from "../lib/mailer.js";
+import adminAuth from "../config/firebase-admin.js";
+import ENV from "../lib/env.js";
 
 // ─── Helper: hash a raw token for safe DB storage ─────────────────────────
 const hashToken = (token) => crypto.createHash("sha256").update(token).digest("hex");
@@ -260,4 +262,74 @@ const updateProfile = async (req, res) => {
   }
 };
 
-export { login, signup, logout, userProfile, updateProfile, verifyEmail, resendVerificationEmail };
+const google = async (req, res) => {
+  const { idToken } = req.body;
+  if (!idToken) {
+    return res.status(400).json({ message: "Firebase ID token is required" });
+  }
+
+  try {
+    // Verify the Firebase ID token
+    const decodedToken = await adminAuth.verifyIdToken(idToken);
+
+    const { email, name, picture, uid } = decodedToken;
+
+    if (!email) {
+      return res.status(400).json({ message: "Email is required from Google account" });
+    }
+
+    let user = await User.findOne({ email: email.toLowerCase() });
+
+    if (!user) {
+      const personalRoomId = `mf-${crypto.randomUUID()}`;
+      user = new User({
+        fullName: name || "Google User",
+        email: email.toLowerCase(),
+        firebaseUid: uid,
+        authProvider: "google",
+        isVerified: true,
+        personalRoomId,
+        profilePic: picture || "",
+      });
+      await user.save();
+    } else {
+      let updated = false;
+      if (!user.firebaseUid) {
+        user.firebaseUid = uid;
+        updated = true;
+      }
+      if (user.authProvider !== "google") {
+        user.authProvider = "google";
+        updated = true;
+      }
+      if (picture && !user.profilePic) {
+        user.profilePic = picture;
+        updated = true;
+      }
+      if (updated) {
+        await user.save();
+      }
+    }
+
+    generateToken(user._id, res);
+
+    res.status(200).json({
+      message: "Google login successful",
+      user: {
+        _id: user._id,
+        fullName: user.fullName,
+        email: user.email,
+        profilePic: user.profilePic,
+        role: user.role,
+        isVerified: user.isVerified,
+        personalRoomId: user.personalRoomId,
+        createdAt: user.createdAt,
+      },
+    });
+  } catch (error) {
+    console.error("Error in google auth controller:", error);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+export { login, signup, logout, userProfile, updateProfile, verifyEmail, resendVerificationEmail, google };

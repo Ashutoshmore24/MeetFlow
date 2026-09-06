@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../store/useAuthStore";
 import { useMeetingStore } from "../store/useMeetingStore";
+
 import JoinMeetingModal from "../components/dashboard/JoinMeetingModal";
 import ScheduleMeetingModal from "../components/dashboard/ScheduleMeetingModal";
 import ShareMeetingModal from "../components/dashboard/ShareMeetingModal";
@@ -10,6 +11,7 @@ import { History, Plus, Users, Calendar, Video, LogOut, Mail, X } from 'lucide-r
 const DashboardPage = () => {
   const { authUser, logout, resendVerification } = useAuthStore();
   const navigate = useNavigate();
+
   const { createInstantMeeting, isCreatingMeeting, upcomingMeetings, fetchUpcomingMeetings,historyMeetings,getHistoryMeetings } = useMeetingStore();
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
@@ -69,6 +71,10 @@ const DashboardPage = () => {
     setBannerDismissed(true);
   };
 
+  const handleLogout = async () => {
+    await logout();
+  };
+
   const showVerifyBanner = authUser && authUser.isVerified === false && !bannerDismissed;
   return (
     <div className="min-h-screen text-white relative bg-[#0a0a0a] overflow-hidden">
@@ -123,7 +129,7 @@ const DashboardPage = () => {
                 className="w-full h-full object-cover rounded-full bg-slate-800"
               />
             </button>
-            <button onClick={logout} className="flex items-center gap-2 px-4 py-2 text-sm font-semibold transition-all border rounded-lg text-slate-300 border-white/10 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30">
+            <button onClick={handleLogout} className="flex items-center gap-2 px-4 py-2 text-sm font-semibold transition-all border rounded-lg text-slate-300 border-white/10 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30">
               <LogOut className="w-4 h-4" /> Logout
             </button>
           </div>
