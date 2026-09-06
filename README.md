@@ -23,7 +23,8 @@ MeetFlow/
 │   └── src/
 │       ├── config/
 │       │   ├── cloudinary.js
-│       │   └── db.js
+│       │   ├── db.js
+│       │   └── firebase-admin.js
 │       ├── controllers/
 │       │   ├── auth.controller.js
 │       │   └── meeting.controller.js
@@ -70,6 +71,7 @@ MeetFlow/
     │   ├── index.css
     │   ├── lib/
     │   │   ├── axios.js
+    │   │   ├── firebase.js
     │   │   └── socket.js
     │   ├── main.jsx
     │   ├── pages/
@@ -95,7 +97,9 @@ MeetFlow/
 ### 🔐 Authentication & Security
 
 - JWT Authentication
+- Google Sign-In via Firebase Authentication
 - Secure HTTP-only Cookies
+- Email Verification
 - Protected Routes
 - Arcjet Bot Protection & Rate Limiting
 - Password Hashing using bcrypt
@@ -144,6 +148,7 @@ MeetFlow/
 - Axios
 - React Router DOM
 - Socket.IO Client
+- Firebase Authentication (Google Sign-In)
 
 ### Backend
 
@@ -151,6 +156,7 @@ MeetFlow/
 - Express.js
 - MongoDB
 - Mongoose
+- Firebase Admin SDK
 - Arcjet
 - Socket.IO
 
@@ -208,7 +214,11 @@ All endpoints in this section are prefixed with `/api/auth`.
 | **POST** | `/login` | Arcjet | `login` | Authenticates a user and sets a JWT cookie. |
 | **POST** | `/signup` | Arcjet | `signup` | Registers a new user and sets a JWT cookie. |
 | **POST** | `/logout` | Arcjet | `logout` | Clears the user's JWT cookie. |
+| **POST** | `/google` | Arcjet | `google` | Verifies a Firebase ID token and sets a JWT cookie. |
 | **GET** | `/me` | Arcjet &rarr; `protectRoute` | `userProfile` | Retrieves the authenticated user's profile details. |
+| **PUT** | `/update-profile` | Arcjet &rarr; `protectRoute` | `updateProfile` | Updates the authenticated user's profile. |
+| **GET** | `/verify-email/:token` | Arcjet | `verifyEmail` | Verifies the user's email address via a token link. |
+| **POST** | `/resend-verification` | Arcjet &rarr; `protectRoute` | `resendVerificationEmail` | Resends the email verification link. |
 
 ### Meeting Routes
 
@@ -252,20 +262,40 @@ The real-time events used for managing meeting rooms, chat messages, and WebRTC 
 ### Backend (.env)
 
 ```env
-PORT=X000
+PORT=5000
+NODE_ENV=development
 
 MONGO_URI=your_mongodb_uri
 
 JWT_SECRET=your_jwt_secret
 
-ARCJET_KEY=your_arcjet_key
+CLIENT_URL=http://localhost:5173
 
+ARCJET_KEY=your_arcjet_key
 ARCJET_ENV=development
 
-CLIENT_URL=http://localhost:5173
+CLOUDINARY_CLOUD_NAME=your_cloudinary_cloud_name
+CLOUDINARY_API_KEY=your_cloudinary_api_key
+CLOUDINARY_API_SECRET=your_cloudinary_api_secret
+
+# Gmail SMTP
+EMAIL_USER=your_email@gmail.com
+EMAIL_PASS=your_app_password
+
+# Firebase
+FIREBASE_PROJECT_ID=your_firebase_project_id
 ```
 
+---
+
 ## 🚀 Getting Started
+
+### Prerequisites
+
+- Node.js (v18 or higher)
+- MongoDB Atlas account
+- Firebase project with Google Sign-In enabled
+- Cloudinary account
 
 ### Clone Repository
 
@@ -281,6 +311,8 @@ cd MeetFlow
 cd backend
 
 npm install
+
+# Create a .env file and fill in the environment variables listed above
 
 npm run dev
 ```
